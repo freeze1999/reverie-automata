@@ -1,0 +1,50 @@
+# reverie-automata: one file, every knob. Copy to reverie.yaml and edit.
+# Nothing here is a code change; add your own keys and your own adapters read them.
+
+home: ~/.reverie-automata          # db, memory, and per-cycle artifacts live here
+
+# --- the gate: when may a cycle run at all? ---
+window: { start: 12, end: 2 }      # local hours; wraps past midnight (12:00 -> 02:00)
+idle_minutes: 60                   # silence required before the agent may stir
+max_cycles_per_day: 3
+min_gap_minutes: 90
+phase_timeout_minutes: 45
+
+# --- budget: heavy by design, but bounded ---
+budget: { floor: 1.50, soft: 2.50, max_per_cycle: 0.80 }
+max_tool_turns: { plan: 25, execute: 40, learn: 15 }
+
+# --- who does the reasoning (see adapters/agents.py for every backend) ---
+agent:                             # runs execute/learn tool sessions
+  backend: claude_code             # claude_code | codex | cursor | devin | windsurf | cline | pi | mock
+  options: { bin: claude, model: sonnet }
+planner:                           # runs planning + text-only (usually a cheaper model)
+  backend: mock
+  options: {}
+
+# --- how a risky action reaches you (see adapters/transports.py) ---
+approval:
+  transport: stdout                # stdout | telegram
+  options: {}
+  # telegram example:
+  # transport: telegram
+  # options: { token_env: REVERIE_BOT_TOKEN, chat_id: "123", owner_id: "123" }
+
+# --- what the agent sees each cycle (see adapters/sources.py) ---
+harvest_max_tokens: 10000
+sources:
+  - { type: file,    label: notes,   priority: 3, patterns: ["~/notes/TODO.md"] }
+  - { type: shell,   label: health,  priority: 4, commands: ["git -C ~/project status -s", "df -h /"] }
+  - { type: markers, label: repo,    priority: 2, roots: ["~/project"], exts: [".md", ".py"] }
+
+# --- learning / memory ---
+memory_max_lines: 150              # lessons file cap; over it a prune task is forced
+retention_days: 60
+
+# --- safety (the tool-layer brake reads these) ---
+protected_paths:                   # writes here become approvals, never silent
+  - ~/.ssh
+  - /etc
+  - ~/project/.env
+egress_allowlist: []               # domains raw curl/wget POST may reach; empty = none
+allowed_recipients: []             # ids the agent may message without approval
