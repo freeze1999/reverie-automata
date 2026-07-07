@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/github/actions/workflow/status/freeze1999/reverie-automata/ci.yml?style=flat-square&color=111111&label=ci" alt="CI">
   <img src="https://img.shields.io/badge/python-3.10+-111111?style=flat-square" alt="Python 3.10+">
   <img src="https://img.shields.io/github/v/tag/freeze1999/reverie-automata?style=flat-square&color=111111&label=release" alt="Release">
   <img src="https://img.shields.io/github/stars/freeze1999/reverie-automata?style=flat-square&color=111111&label=stars" alt="Stars">
