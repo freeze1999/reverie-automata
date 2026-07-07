@@ -1,0 +1,29 @@
+[project]
+name = "reverie-automata"
+version = "0.1.0"
+description = "A reasoning-first idle flywheel that turns any coding agent into an autonomous, self-improving worker: gated, budgeted, and auditable."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["agent", "autonomous-agents", "llm", "ai-agent", "claude-code", "codex",
+            "cursor", "devin", "flywheel", "idle-loop", "agent-framework", "self-improving",
+            "human-in-the-loop", "observability", "cron"]
+authors = [{ name = "reverie-automata contributors" }]
+dependencies = []                       # core is standard-library only
+
+[project.optional-dependencies]
+tokens = ["tiktoken"]                   # sharper harvest budgeting
+yaml = ["pyyaml"]                        # config file loading
+dev = ["pytest", "pyyaml"]
+
+[project.urls]
+Homepage = "https://github.com/freeze1999/reverie-automata"
+Repository = "https://github.com/freeze1999/reverie-automata"
+Issues = "https://github.com/freeze1999/reverie-automata/issues"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["reverie_automata*"]
