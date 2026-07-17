@@ -5,7 +5,14 @@ follows Keep a Changelog; versions follow semver.
 
 ## [Unreleased]
 
+### Fixed
+- Fire-lock claim is atomic (`O_CREAT|O_EXCL`); an exists()-then-write race
+  could let two concurrent ticks both fire.
+
 ### Added
+- Blast radius is now actually computed: `protected_paths` are snapshotted
+  around each cycle and changed, new, and deleted files land in the outcome
+  (deletions flagged with a `deleted: ` prefix).
 - Adapter and harvest tests for the pure parts (argv construction, output
   extraction, registry, token estimation).
 - `py.typed` marker so downstream type checkers use the package's hints.
