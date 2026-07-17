@@ -22,6 +22,22 @@ from .adapters.agents import build_agent
 from .adapters.transports import build_transport
 
 
+def claim_lock(lock: Path) -> bool:
+    """Atomically claim the fire lock, stamping this PID for ``gate.reap_lock``.
+
+    Create-if-absent must be ONE operation (O_CREAT|O_EXCL): a separate
+    exists()-then-write leaves a window where two ticks both see no lock and
+    both fire. The OS guarantees exactly one winner; the loser returns False.
+    """
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
 class Runner:
     def __init__(self, cfg: Config, *, last_input_ts: Callable[[], float],
                  is_available: Callable[[], bool] = lambda: True,
@@ -53,9 +69,8 @@ class Runner:
                                            state, self.cfg, self.balance(), self.kill.exists())
         if not fire:
             return {"fired": False, "reason": reason}
-        if self.lock.exists():
+        if not claim_lock(self.lock):
             return {"fired": False, "reason": "another cycle holds the lock"}
-        self.lock.write_text(str(os.getpid()))
         try:
             state.last_fired_input_ts = self.last_input_ts()
             state.last_fire_at = now.timestamp()
