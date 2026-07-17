@@ -20,6 +20,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from . import blast
 from . import prompts as P
 from .types import ActionClass, Lesson, Outcome, Risk
 
@@ -95,6 +96,7 @@ class Engine:
         plan = parse_plan(p1) or {"do_nothing": True, "do_nothing_reason": "unparseable plan", "tasks": []}
 
         ledger: list[dict] = []
+        pre = blast.snapshot(self.cfg["protected_paths"])
         if not plan.get("do_nothing"):
             for task in plan.get("tasks", [])[:8]:
                 ledger.append(self._do_task(con, ts, cdir, task, text_only))
@@ -109,6 +111,11 @@ class Engine:
         lessons = [Lesson(*[x.strip() for x in re.split(r"->", l, maxsplit=2)])
                    for l in re.findall(r"<<LESSON>>(.*?)<<END>>", p3, re.S)
                    if len(re.split(r"->", l, maxsplit=2)) == 3]
+
+        # Tasks and the LEARN session both hold real tools, so the post
+        # snapshot happens after both; anything in the watch set that changed,
+        # appeared, or vanished during the cycle lands in the outcome.
+        touched = blast.diff(pre, blast.snapshot(self.cfg["protected_paths"]))
 
         grade = derive_grade(ledger)
         con.execute("INSERT OR REPLACE INTO journal (cycle_ts, body, created_at) VALUES (?,?,?)",
@@ -125,9 +132,11 @@ class Engine:
         con.close()
 
         outcome = Outcome(when=now, action_class=ActionClass.NOTHING if plan.get("do_nothing") else ActionClass.NEEDS_TOOL,
-                          grade=grade, phase1=p1, phase2=p3, ledger=ledger, lessons=lessons, journal=journal)
+                          grade=grade, phase1=p1, phase2=p3, ledger=ledger, lessons=lessons, journal=journal,
+                          blast_radius=touched)
         (cdir / "outcome.json").write_text(json.dumps({
             "ts": ts, "grade": grade, "plan": plan, "ledger": ledger,
+            "blast_radius": touched,
             "lessons": [l.__dict__ for l in lessons]}, ensure_ascii=False, indent=2), encoding="utf-8")
         return outcome
 
