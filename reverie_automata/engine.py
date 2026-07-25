@@ -100,17 +100,23 @@ class Engine:
                                    max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
         (cdir / "plan.txt").write_text(p1, encoding="utf-8")
         plan = parse_plan(p1) or {"do_nothing": True, "do_nothing_reason": "unparseable plan", "tasks": []}
-        n_inbox = self.inbox.consume(inbox_files, ts)
-
         # A schema can guarantee the plan's shape; only the engine can tell
         # whether "nothing to do" is an honest lazy day or a missed shift, so
         # the eligibility answer comes from here and never from the model.
-        work_available = bool(inbox_files) or bool(self.store.open_threads(con, limit=1))
+        work_available = bool(inbox_files) or bool(self.store.due_threads(
+            con, cooldown_minutes=float(self.cfg.get("thread_cooldown_minutes", 0) or 0),
+            limit=1))
         plan, plan_complaints, false_no_op = validate_plan(
             plan, work_available=work_available,
             max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)))
         for c in plan_complaints:
             print(f"[plan] {c}")
+
+        # A drop is spent by a cycle that ENGAGED with it. A cycle that
+        # wrongly declared there was nothing to do did not engage, and
+        # archiving the request anyway would let a weak planner quietly eat
+        # work by claiming a lazy day. Leave it in the queue for the next one.
+        n_inbox = 0 if false_no_op else self.inbox.consume(inbox_files, ts)
 
         ledger: list[dict] = []
         pre = blast.snapshot(self.cfg["protected_paths"])
@@ -167,12 +173,19 @@ class Engine:
         if final == "RISKY":
             self._file_approval(con, ts, task, task.get("risk_reason") or wpat)
             self.store.add_thread(con, f"parked (awaiting approval): {what[:100]}",
-                                  json.dumps(task, ensure_ascii=False), kind="approval", created_cycle=ts)
+                                  json.dumps(task, ensure_ascii=False), kind="approval",
+                                  created_cycle=ts, defer=True)
             return {"id": tid, "status": "parked", "what": what}
         if text_only and task.get("mode") == "tool":
-            self.store.add_thread(con, f"deferred (text-only budget): {what[:100]}", "", created_cycle=ts)
+            self.store.add_thread(con, f"deferred (text-only budget): {what[:100]}", "",
+                                  created_cycle=ts, defer=True)
             return {"id": tid, "status": "skipped", "what": what}
 
+        if task.get("thread"):
+            try:
+                self.store.mark_thread_attempted(con, int(task["thread"]))
+            except (TypeError, ValueError):
+                pass  # a malformed thread id is the planner's problem, not a crash
         con.execute("INSERT INTO tasks (cycle_ts, task_id, what, mode, risk, status, started_at) "
                     "VALUES (?,?,?,?,?,'started',?)", (ts, tid, what, task.get("mode"), final, time.time()))
         con.commit()
@@ -192,7 +205,8 @@ class Engine:
                     (status, time.time(), verify[:2000], ts, tid))
         con.commit()
         if status == "failed":
-            self.store.add_thread(con, f"resume failed task: {what[:100]}", verify[:400], created_cycle=ts)
+            self.store.add_thread(con, f"resume failed task: {what[:100]}", verify[:400],
+                                  created_cycle=ts, defer=True)
         return {"id": tid, "status": status, "what": what, "verify": verify[:200]}
 
     def _file_approval(self, con, ts, task, reason):

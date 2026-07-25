@@ -33,21 +33,53 @@ def in_window(hour: int, start: int, end: int) -> bool:
     return (start <= hour < end) if start < end else (hour >= start or hour < end)
 
 
-def decide(now, last_input_ts, available, state, cfg, balance, killed) -> tuple[bool, bool, str]:
-    """Pure. Returns (fire, text_only, reason). ``now`` is a datetime; ``cfg`` a dict."""
+def decide(now, last_input_ts, available, state, cfg, balance, killed,
+           work=None) -> tuple[bool, bool, str]:
+    """Pure. Returns (fire, text_only, reason). ``now`` is a datetime; ``cfg`` a dict.
+
+    Two ways to be armed, chosen by ``cfg["trigger"]``:
+
+    ``idle`` (default)  presence-gated. Wake in the gaps when the principal is
+                        away, once per gap. This is the companion rhythm.
+    ``work``            work-gated. Wake when something is actually DUE, whether
+                        or not anyone is at their desk. This is the standing
+                        operative: the heartbeat may tick as fast as you like,
+                        because a tick with nothing due never gets here with
+                        ``work`` set and never costs a model call.
+    ``both``            the conservative intersection: due AND undisturbed.
+
+    ``work`` is an Eligibility (or None), computed outside so this stays pure.
+    The safety floors below (kill switch, window, daily cap, minimum gap,
+    budget) apply in every mode: they are not about whose attention is free,
+    they are about what the operative is allowed to spend and when.
+    """
+    trigger = str(cfg.get("trigger", "idle")).lower()
+    presence_armed = trigger in ("idle", "both")
+    work_armed = trigger in ("work", "both")
+
     if killed:
         return False, False, "kill switch present"
-    if not available:
+    if presence_armed and not available:
         return False, False, "principal is available / busy"
     if not in_window(now.hour, cfg["window"]["start"], cfg["window"]["end"]):
         return False, False, f"outside window ({now.hour:02d}h)"
-    if last_input_ts <= 0:
-        return False, False, "no input on record"
-    idle = (now.timestamp() - last_input_ts) / 60.0
-    if idle < cfg["idle_minutes"]:
-        return False, False, f"not idle enough ({idle:.0f} < {cfg['idle_minutes']}m)"
-    if last_input_ts <= state.last_fired_input_ts:
-        return False, False, "already fired this idle gap"
+
+    idle = None
+    if presence_armed:
+        if last_input_ts <= 0:
+            return False, False, "no input on record"
+        idle = (now.timestamp() - last_input_ts) / 60.0
+        if idle < cfg["idle_minutes"]:
+            return False, False, f"not idle enough ({idle:.0f} < {cfg['idle_minutes']}m)"
+        if last_input_ts <= state.last_fired_input_ts:
+            return False, False, "already fired this idle gap"
+
+    if work_armed:
+        if work is None:
+            return False, False, "work-gated but no eligibility was assessed"
+        if not work:
+            return False, False, f"nothing due ({work.reason})"
+
     day = now.strftime("%Y-%m-%d")
     if sum(1 for f in state.fires if f.startswith(day)) >= cfg["max_cycles_per_day"]:
         return False, False, f"daily cap reached ({cfg['max_cycles_per_day']})"
@@ -59,7 +91,10 @@ def decide(now, last_input_ts, available, state, cfg, balance, killed) -> tuple[
         return False, False, f"budget floor (${balance:.2f} < ${floor})"
     soft = cfg["budget"]["soft"]
     text_only = balance is not None and bool(soft) and balance < soft
-    return True, text_only, f"idle {idle:.0f}m, armed" + (" [text-only: soft budget]" if text_only else "")
+    why = f"idle {idle:.0f}m, armed" if idle is not None else "armed"
+    if work_armed and work is not None:
+        why = (why + ", " if presence_armed else "") + work.reason
+    return True, text_only, why + (" [text-only: soft budget]" if text_only else "")
 
 
 def _pid_alive(pid: int) -> bool:

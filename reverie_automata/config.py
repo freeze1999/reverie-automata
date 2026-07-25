@@ -33,6 +33,10 @@ DEFAULTS: dict[str, Any] = {
     "harvest_max_tokens": 10000,
     "max_tasks_per_cycle": 8,              # small brains should run this at 1
 
+    # --- what arms a cycle ---
+    "trigger": "idle",                     # idle | work | both  (see gate.decide)
+    "thread_cooldown_minutes": 0,          # how long after an attempt a thread is due again
+
     # --- inbox: one-shot drops the operator leaves for the next cycle ---
     "inbox_max_files": 12,                 # drops folded into any one cycle
     "inbox_file_max_chars": 4000,          # per drop, before truncation

@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS journal (
 CREATE TABLE IF NOT EXISTS threads (               -- THE single work queue
   id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT,
   kind TEXT NOT NULL DEFAULT 'work', status TEXT NOT NULL DEFAULT 'open',
-  created_cycle TEXT, updated_at REAL NOT NULL
+  created_cycle TEXT, updated_at REAL NOT NULL,
+  last_attempt_at REAL                             -- NULL = never worked yet
 );
 CREATE TABLE IF NOT EXISTS approvals (             -- artifact-bound, not intent-bound
   id INTEGER PRIMARY KEY AUTOINCREMENT, cycle_ts TEXT, artifact TEXT NOT NULL,
@@ -68,8 +69,22 @@ class Store:
     def _init(self) -> None:
         c = self.connect()
         c.executescript(SCHEMA)
+        self._migrate(c)
         c.commit()
         c.close()
+
+    # Additive migrations only. A database that predates a column must gain it
+    # silently rather than crash a scheduled cycle at three in the morning.
+    _MIGRATIONS = (("threads", "last_attempt_at", "REAL"),)
+
+    def _migrate(self, con) -> None:
+        for table, column, decl in self._MIGRATIONS:
+            try:
+                have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+            except sqlite3.DatabaseError:
+                continue  # a broken table is the caller problem, not the migrator
 
     # --- approvals ---------------------------------------------------------
     def approval_transition(self, con, approval_id: int, new_status: str, event_id: int | None = None) -> bool:
@@ -88,9 +103,41 @@ class Store:
         return r.rowcount > 0
 
     # --- threads (the work queue) -----------------------------------------
-    def add_thread(self, con, title: str, body: str = "", kind: str = "work", created_cycle: str | None = None) -> None:
-        con.execute("INSERT INTO threads (title, body, kind, status, created_cycle, updated_at) "
-                    "VALUES (?,?,?,'open',?,?)", (title, body, kind, created_cycle, time.time()))
+    def add_thread(self, con, title: str, body: str = "", kind: str = "work",
+                   created_cycle: str | None = None, defer: bool = False) -> None:
+        """`defer` starts the thread already inside its cooldown.
+
+        Use it for follow-ups the engine generates from its own failures. A
+        failed task that spawns an immediately-due thread will spawn another
+        on the next tick, and under a fast work-gated heartbeat that is a spin
+        at full speed until the daily cap catches it. Work that arrives from
+        outside (a person, a drop) is due at once; work the engine made for
+        itself waits its turn."""
+        now = time.time()
+        con.execute("INSERT INTO threads (title, body, kind, status, created_cycle, "
+                    "updated_at, last_attempt_at) VALUES (?,?,?,'open',?,?,?)",
+                    (title, body, kind, created_cycle, now, now if defer else None))
+        con.commit()
+
+    def due_threads(self, con, cooldown_minutes: float = 0.0, now: float | None = None,
+                    limit: int = 50):
+        """Open threads that are actually ELIGIBLE right now: never attempted,
+        or last attempted longer ago than the cooldown. This is the difference
+        between work that exists and work that is due, and the work gate turns
+        on exactly that distinction: without it every quiet cycle looks busy
+        because some deferred thread is technically still open."""
+        now = time.time() if now is None else now
+        cutoff = now - cooldown_minutes * 60.0
+        return con.execute(
+            f"SELECT id, kind, title FROM threads WHERE status='open' "
+            f"AND (last_attempt_at IS NULL OR last_attempt_at <= ?) "
+            f"ORDER BY {THREAD_PRIORITY}, id LIMIT ?", (cutoff, limit)).fetchall()
+
+    def mark_thread_attempted(self, con, thread_id, now: float | None = None) -> None:
+        """Record that a cycle actually worked this thread, so the cooldown
+        starts from the attempt rather than from any incidental edit."""
+        con.execute("UPDATE threads SET last_attempt_at=? WHERE id=?",
+                    (time.time() if now is None else now, thread_id))
         con.commit()
 
     def open_threads(self, con, limit: int = 50):

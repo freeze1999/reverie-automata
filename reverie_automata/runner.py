@@ -18,6 +18,7 @@ from .engine import Engine
 from .harvest import Harvester
 from .inspector import Inspector
 from .store import Store
+from .workgate import assess_work
 from .adapters.agents import build_agent
 from .adapters.transports import build_transport
 
@@ -65,8 +66,22 @@ class Runner:
         now = datetime.now()
         G.reap_lock(self.lock, self.cfg)
         state = G.load_state(self.state_file)
+
+        # The cheap question first: one indexed query and a directory scan.
+        # A heartbeat tick with nothing due stops here, having spent no model
+        # call, which is what lets the heartbeat run as fast as you please.
+        work = None
+        if str(self.cfg.get("trigger", "idle")).lower() in ("work", "both"):
+            con = self.store.connect()
+            try:
+                work = assess_work(con, self.store, self.engine.inbox, self.cfg,
+                                   now.timestamp())
+            finally:
+                con.close()
+
         fire, text_only, reason = G.decide(now, self.last_input_ts(), self.is_available(),
-                                           state, self.cfg, self.balance(), self.kill.exists())
+                                           state, self.cfg, self.balance(),
+                                           self.kill.exists(), work=work)
         if not fire:
             return {"fired": False, "reason": reason}
         if not claim_lock(self.lock):

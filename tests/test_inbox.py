@@ -122,3 +122,17 @@ def test_inbox_rides_the_context_at_priority_zero(tmp_path):
     con.close()
     assert "fix the broken link" in text
     assert report["over_budget"] or True      # trimming ran; the drop stayed
+
+
+def test_a_false_no_op_does_not_eat_the_request(tmp_path):
+    """A cycle that wrongly claimed there was nothing to do never engaged with
+    the drop, so the drop keeps its place. Otherwise a weak planner can retire
+    work simply by declaring a lazy day."""
+    from reverie_automata.planvalidate import validate_plan
+    box = Inbox(tmp_path / "inbox")
+    p = _drop(box, "req.md", "please handle this")
+    _, files = box.read()
+    _, _, false_no_op = validate_plan({"tasks": [], "do_nothing": True},
+                                      work_available=True)
+    consumed = 0 if false_no_op else box.consume(files, "c1")
+    assert consumed == 0 and p.exists()
