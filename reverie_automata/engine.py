@@ -23,6 +23,7 @@ from pathlib import Path
 from . import blast
 from . import prompts as P
 from .inbox import Inbox
+from .planvalidate import validate_plan
 from .types import ActionClass, Lesson, Outcome, Risk
 
 
@@ -101,10 +102,20 @@ class Engine:
         plan = parse_plan(p1) or {"do_nothing": True, "do_nothing_reason": "unparseable plan", "tasks": []}
         n_inbox = self.inbox.consume(inbox_files, ts)
 
+        # A schema can guarantee the plan's shape; only the engine can tell
+        # whether "nothing to do" is an honest lazy day or a missed shift, so
+        # the eligibility answer comes from here and never from the model.
+        work_available = bool(inbox_files) or bool(self.store.open_threads(con, limit=1))
+        plan, plan_complaints, false_no_op = validate_plan(
+            plan, work_available=work_available,
+            max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)))
+        for c in plan_complaints:
+            print(f"[plan] {c}")
+
         ledger: list[dict] = []
         pre = blast.snapshot(self.cfg["protected_paths"])
         if not plan.get("do_nothing"):
-            for task in plan.get("tasks", [])[:8]:
+            for task in plan.get("tasks", []):
                 ledger.append(self._do_task(con, ts, cdir, task, text_only))
 
         # --- LEARN ---
@@ -143,6 +154,7 @@ class Engine:
         (cdir / "outcome.json").write_text(json.dumps({
             "ts": ts, "grade": grade, "plan": plan, "ledger": ledger,
             "blast_radius": touched, "inbox_consumed": n_inbox,
+            "plan_complaints": plan_complaints, "false_no_op": false_no_op,
             "lessons": [l.__dict__ for l in lessons]}, ensure_ascii=False, indent=2), encoding="utf-8")
         return outcome
 

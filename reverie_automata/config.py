@@ -31,6 +31,7 @@ DEFAULTS: dict[str, Any] = {
     # --- what the agent gets to see each cycle (harvest) ---
     "sources": [],                         # list of source specs; see adapters/sources
     "harvest_max_tokens": 10000,
+    "max_tasks_per_cycle": 8,              # small brains should run this at 1
 
     # --- inbox: one-shot drops the operator leaves for the next cycle ---
     "inbox_max_files": 12,                 # drops folded into any one cycle

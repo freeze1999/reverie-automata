@@ -47,9 +47,9 @@ def test_extra_args_are_appended():
     assert a[-1] == "--verbose"
 
 
-def test_registry_has_all_eight_backends():
+def test_registry_holds_every_backend():
     assert set(REGISTRY) == {"claude_code", "codex", "cursor", "devin",
-                             "windsurf", "cline", "pi", "mock"}
+                             "windsurf", "cline", "pi", "local_server", "mock"}
 
 
 def test_build_agent_unknown_backend_fails_loudly():
