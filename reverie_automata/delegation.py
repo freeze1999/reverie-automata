@@ -182,7 +182,6 @@ class JobQueue:
                             note="the result answers a different specification")
             return False, "spec hash mismatch: this answers a different question"
 
-        job.result = dict(result)
         failures = []
         for key, expected in job.contract.items():
             check = checks.get(key)
@@ -195,6 +194,10 @@ class JobQueue:
             except Exception as e:  # noqa: BLE001
                 failures.append(f"{key}: the check raised {type(e).__name__}: {e}")
 
+        # Stored AFTER the checks, not before: a check that ran the delivered
+        # code leaves its evidence in the result, and that evidence is the
+        # receipt. Copying too early keeps the claim and discards the proof.
+        job.result = dict(result)
         job.verdict = {"at": time.time(), "failures": failures,
                        "passed": not failures}
         self._write(job)

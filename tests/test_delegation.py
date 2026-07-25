@@ -140,3 +140,19 @@ def test_open_jobs_excludes_the_finished_ones(tmp_path):
     b = q.file("b", CONTRACT)
     q.transition(b, CANCELLED, by="operator")
     assert [j.id for j in q.open_jobs()] == [a.id]
+
+
+def test_the_evidence_a_check_produced_is_kept(tmp_path):
+    """A check that runs the delivered code produces the receipt; storing the
+    result before the checks keeps the claim and throws away the proof."""
+    def running_check(expected, result):
+        result["_ran"] = {"exit_code": 0, "output": "the determinant is 1"}
+        return True
+
+    q = _q(tmp_path)
+    job = q.file("compute it", {"runs": True})
+    q.transition(job, WORKING, by="worker")
+    ok, _ = q.accept_result(job.id, {"spec_hash": job.spec_hash, "script": "x"},
+                            checks={"runs": running_check})
+    assert ok
+    assert q.load(job.id).result["_ran"]["output"] == "the determinant is 1"
