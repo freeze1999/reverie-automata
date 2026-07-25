@@ -50,6 +50,10 @@ class Harvester:
     def build(self, con, ctx: dict | None = None) -> tuple[str, dict]:
         ctx = ctx or {}
         blocks = self._spine(con)
+        # An explicit request from the operator is priority 0: it may be
+        # declined by judgment, never silently shrunk by the trimmer.
+        if ctx.get("inbox"):
+            blocks.insert(1, (0, "inbox (one-shot drops for THIS cycle)", ctx["inbox"]))
         for s in self.sources:
             try:
                 text = s.collect(ctx)

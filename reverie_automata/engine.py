@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import blast
 from . import prompts as P
+from .inbox import Inbox
 from .types import ActionClass, Lesson, Outcome, Risk
 
 
@@ -65,6 +66,7 @@ class Engine:
         self.inspector, self.agent, self.planner, self.approvals = inspector, agent, planner, approvals
         self.home = cfg.home
         self.memory_path = self.home / "MEMORY.md"
+        self.inbox = Inbox(self.home / "inbox", cfg)
 
     # -- risk (defense in depth: wrapper classifies too, and wins) ----------
     def _wrapper_risk(self, task: dict) -> tuple[str, str]:
@@ -89,11 +91,15 @@ class Engine:
         con.commit()
 
         # --- PLAN ---
-        context, _ = self.harvest.build(con)
+        # Reading the inbox is pure; the drops are archived only once a plan
+        # exists, so a failed inference leaves them for the next cycle.
+        inbox_section, inbox_files = self.inbox.read()
+        context, _ = self.harvest.build(con, {"inbox": inbox_section})
         p1 = self.planner.complete("", P.PLAN.format(context=context),
                                    max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
         (cdir / "plan.txt").write_text(p1, encoding="utf-8")
         plan = parse_plan(p1) or {"do_nothing": True, "do_nothing_reason": "unparseable plan", "tasks": []}
+        n_inbox = self.inbox.consume(inbox_files, ts)
 
         ledger: list[dict] = []
         pre = blast.snapshot(self.cfg["protected_paths"])
@@ -136,7 +142,7 @@ class Engine:
                           blast_radius=touched)
         (cdir / "outcome.json").write_text(json.dumps({
             "ts": ts, "grade": grade, "plan": plan, "ledger": ledger,
-            "blast_radius": touched,
+            "blast_radius": touched, "inbox_consumed": n_inbox,
             "lessons": [l.__dict__ for l in lessons]}, ensure_ascii=False, indent=2), encoding="utf-8")
         return outcome
 

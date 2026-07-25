@@ -32,6 +32,11 @@ DEFAULTS: dict[str, Any] = {
     "sources": [],                         # list of source specs; see adapters/sources
     "harvest_max_tokens": 10000,
 
+    # --- inbox: one-shot drops the operator leaves for the next cycle ---
+    "inbox_max_files": 12,                 # drops folded into any one cycle
+    "inbox_file_max_chars": 4000,          # per drop, before truncation
+    "inbox_total_max_chars": 12000,        # across all drops in one cycle
+
     # --- memory / learning ---
     "memory_max_lines": 150,               # lessons file cap; over it, a prune task is forced
     "retention_days": 60,
