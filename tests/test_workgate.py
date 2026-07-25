@@ -180,3 +180,17 @@ def test_two_cycles_in_one_second_do_not_collide(tmp_path):
         assert r.tick()["fired"] is True
     ids = sorted(p.name for p in (Path(r.cfg["home"]) / "cycles").glob("*"))
     assert len(ids) == 3 and len(set(ids)) == 3
+
+
+def test_a_task_that_fails_repeatedly_leaves_one_thread_not_five(tmp_path):
+    """Found live: five identical "resume failed task" threads from one task
+    failing five times. The queue then overstates the work and the planner
+    picks a copy of an old problem over the new one that matters."""
+    store = Store(tmp_path / "s.db")
+    con = store.connect()
+    for _ in range(5):
+        store.add_thread(con, "resume failed task: read the file", defer=True, unique=True)
+    assert len(store.open_threads(con)) == 1
+    store.add_thread(con, "a genuinely different piece of work", unique=True)
+    assert len(store.open_threads(con)) == 2
+    con.close()

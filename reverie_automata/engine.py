@@ -57,8 +57,15 @@ def derive_grade(ledger: list[dict]) -> str:
     return "A" if ratio >= 0.8 else "B" if ratio >= 0.6 else "C" if ratio >= 0.3 else ("D" if done else "F")
 
 
-RISKY_HINTS = re.compile(r"sudo|systemctl|crontab|deploy|\bpush\b|install|delete|drop\s+table|"
-                         r"restart|migrat|password|secret|prod", re.I)
+# Word boundaries are not decoration here. Without them a guard meant for
+# "production" fired on "re-prod-uce" and parked an exact-arithmetic
+# computation, and "sudo" would have caught every "pseudo-inverse" in a
+# mathematics workload. A guard that strangles legitimate traffic does not
+# get called cautious; it gets switched off, and then it guards nothing.
+RISKY_HINTS = re.compile(
+    r"\bsudo\b|\bsystemctl\b|\bcrontab\b|\bdeploy\w*|\bpush\b|\binstall\w*|"
+    r"\bdelete\w*|\bdrop\s+table\b|\brestart\w*|\bmigrat\w*|\bpassword\w*|"
+    r"\bsecret\w*|\bprod\b|\bproduction\b", re.I)
 
 
 class Engine:
@@ -152,11 +159,29 @@ class Engine:
         grade = derive_grade(ledger)
         con.execute("INSERT OR REPLACE INTO journal (cycle_ts, body, created_at) VALUES (?,?,?)",
                     (ts, journal + (("\n\n[review]\n" + review) if review else ""), time.time()))
-        for ls in lessons[:3]:
-            if all([ls.situation, ls.action, ls.outcome]):
-                con.execute("INSERT INTO lessons (cycle_ts, situation, action, outcome, created_at) VALUES (?,?,?,?,?)",
-                            (ts, ls.situation, ls.action, ls.outcome, time.time()))
-        self._append_memory(lessons)
+        # A cycle that did nothing has nothing to teach. Evidence gates "done";
+        # it must also gate "learned", because a lesson is the one artifact
+        # that becomes permanent context at the highest priority and steers
+        # every later decision.
+        #
+        # Observed live, and the reason this exists: an early no-op cycle
+        # wrote "a lazy cycle with one small text task -> summarise instead of
+        # forcing tool work -> the working set stayed legible and cheap". That
+        # sentence then rode in every context and taught the engine to decline
+        # real work, so a defect became doctrine. Note the asymmetry: a FAILED
+        # cycle may still teach, because a failure is an event with content and
+        # a recorded dead end is worth more than a fresh idea. A no-op is not
+        # an event; "doing nothing was cheap" is a rationalisation wearing a
+        # lesson's clothes.
+        if not plan.get("do_nothing"):
+            for ls in lessons[:3]:
+                if all([ls.situation, ls.action, ls.outcome]):
+                    con.execute("INSERT INTO lessons (cycle_ts, situation, action, outcome, created_at) VALUES (?,?,?,?,?)",
+                                (ts, ls.situation, ls.action, ls.outcome, time.time()))
+            self._append_memory(lessons)
+        elif lessons:
+            print(f"[learn] {len(lessons)} lesson(s) discarded: a cycle that did "
+                  "nothing has nothing to teach")
         con.execute("UPDATE cycles SET finished_at=?, status=?, grade=?, plan_json=? WHERE ts=?",
                     (time.time(), "done" if not plan.get("do_nothing") else "do_nothing", grade,
                      json.dumps(plan, ensure_ascii=False), ts))
@@ -183,11 +208,11 @@ class Engine:
             self._file_approval(con, ts, task, task.get("risk_reason") or wpat)
             self.store.add_thread(con, f"parked (awaiting approval): {what[:100]}",
                                   json.dumps(task, ensure_ascii=False), kind="approval",
-                                  created_cycle=ts, defer=True)
+                                  created_cycle=ts, defer=True, unique=True)
             return {"id": tid, "status": "parked", "what": what}
         if text_only and task.get("mode") == "tool":
             self.store.add_thread(con, f"deferred (text-only budget): {what[:100]}", "",
-                                  created_cycle=ts, defer=True)
+                                  created_cycle=ts, defer=True, unique=True)
             return {"id": tid, "status": "skipped", "what": what}
 
         if task.get("thread"):
@@ -215,7 +240,7 @@ class Engine:
         con.commit()
         if status == "failed":
             self.store.add_thread(con, f"resume failed task: {what[:100]}", verify[:400],
-                                  created_cycle=ts, defer=True)
+                                  created_cycle=ts, defer=True, unique=True)
         return {"id": tid, "status": status, "what": what, "verify": verify[:200]}
 
     def _file_approval(self, con, ts, task, reason):

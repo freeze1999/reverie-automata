@@ -121,3 +121,31 @@ def test_the_per_cycle_cap_is_enforced_by_the_engine(tmp_path):
     out = _outcome(r)
     assert len(out["ledger"]) == 1
     assert any("cap is 1" in c for c in out["plan_complaints"])
+
+
+def test_a_do_nothing_cycle_teaches_nothing(tmp_path):
+    """Found live: an early no-op wrote "a lazy cycle ... summarise instead of
+    forcing tool work ... legible and cheap", and that sentence then rode at
+    the top of every context and taught the engine to decline real work. A
+    defect became doctrine. Evidence gates done; it must gate learned too."""
+    lesson = "<<LESSON>>idle was fine -> did nothing -> nothing broke<<END>>"
+
+    class Teaching(ScriptedPlanner):
+        def run_session(self, directive, **kw):
+            return "<<RESULT>>done<<END>>\n<<VERIFY>>ok<<END>>\n" + lesson
+
+        def complete(self, system, user, *, max_tokens=1000):
+            if "<<PLAN>>" in user:
+                return "<<PLAN>>" + json.dumps(ScriptedPlanner.plan) + "<<END>>"
+            return lesson
+
+    agents.REGISTRY["teaching"] = Teaching
+    r = _runner(tmp_path, {"tasks": [], "do_nothing": True, "do_nothing_reason": "quiet"},
+                trigger="idle", planner={"backend": "teaching"},
+                agent={"backend": "teaching"})
+    r.tick()
+
+    import sqlite3
+    con = sqlite3.connect(Path(r.cfg["home"]) / "state.db")
+    assert con.execute("SELECT COUNT(*) FROM lessons").fetchone()[0] == 0
+    con.close()

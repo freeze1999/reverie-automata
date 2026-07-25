@@ -103,8 +103,13 @@ class Store:
         return r.rowcount > 0
 
     # --- threads (the work queue) -----------------------------------------
+    def has_open_titled(self, con, title: str) -> bool:
+        return con.execute("SELECT 1 FROM threads WHERE status='open' AND title=? LIMIT 1",
+                           (title,)).fetchone() is not None
+
     def add_thread(self, con, title: str, body: str = "", kind: str = "work",
-                   created_cycle: str | None = None, defer: bool = False) -> None:
+                   created_cycle: str | None = None, defer: bool = False,
+                   unique: bool = False) -> None:
         """`defer` starts the thread already inside its cooldown.
 
         Use it for follow-ups the engine generates from its own failures. A
@@ -113,6 +118,12 @@ class Store:
         at full speed until the daily cap catches it. Work that arrives from
         outside (a person, a drop) is due at once; work the engine made for
         itself waits its turn."""
+        if unique and self.has_open_titled(con, title):
+            # A task that fails five times must not leave five identical
+            # threads. The queue would then overstate how much work exists and
+            # crowd out newer, more important work with copies of the same
+            # unfinished thing, which is exactly what happened here.
+            return
         now = time.time()
         con.execute("INSERT INTO threads (title, body, kind, status, created_cycle, "
                     "updated_at, last_attempt_at) VALUES (?,?,?,'open',?,?,?)",

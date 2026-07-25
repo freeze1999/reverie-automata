@@ -50,16 +50,26 @@ def test_an_invented_tool_is_reported_not_executed():
     assert "no such tool" in a.transcript[0]
 
 
-def test_a_repeated_failure_stops_the_loop_instead_of_burning_the_cap():
-    """A small model reissues a failing call until the cap; the loop is what
-    has to notice."""
+def test_a_repeated_call_stops_the_loop_instead_of_burning_the_cap():
+    """A small model reissues a call that is not working until the cap; the
+    loop is what has to notice."""
     def always_raises(arg):
         raise PermissionError("nope")
 
     a = _agent([_step("bad")], {"bad": ("fails", always_raises)})
     out = a.run_session("go")
-    assert "the same call failed 3 times" in out
+    assert "the same call was made 3 times" in out
     assert len(a.transcript) <= 4        # stopped early, did not run ten turns
+
+
+def test_repetition_is_caught_even_when_the_call_succeeds():
+    """Found live: the model searched for the same words six times. Each call
+    returned "no results" perfectly successfully, so a guard that only watches
+    for errors watched the whole thing happen."""
+    a = _agent([_step("search", "same words")],
+               {"search": ("searches", lambda q: "no results; try different words")})
+    out = a.run_session("go")
+    assert "cannot produce anything new" in out
 
 
 def test_the_tighter_turn_cap_wins():
@@ -80,3 +90,13 @@ def test_unparseable_steps_do_not_crash_the_loop():
     out = a.run_session("go")
     assert "<<RESULT>>done<<END>>" in out
     assert "no usable step" in a.transcript[0]
+
+
+def test_a_brain_that_answers_nothing_ends_the_session():
+    """Found live: the server returned 500 on every call and the loop spent
+    all ten turns asking again. A brain that cannot answer does not need more
+    turns, it needs the reason surfaced."""
+    a = _agent(["[local server error: HTTP Error 500: Internal Server Error]"], {})
+    out = a.run_session("go")
+    assert "nothing usable 3 times" in out
+    assert len(a.transcript) <= 4

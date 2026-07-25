@@ -37,8 +37,16 @@ def _step_schema(tool_names: list[str]) -> dict[str, Any]:
         "schema": {
             "type": "object",
             "properties": {
-                "thought": {"type": "string"},
+                # Capped for the same reason the plan envelope is: a long
+                # thought runs out of budget before the step closes, and a
+                # truncated step parses as nothing at all.
+                "thought": {"type": "string", "maxLength": 200},
                 "tool": {"enum": tool_names},
+                # No cap here, deliberately. A grammar expands a length limit
+                # into explicit repetitions, and a large one fails to compile
+                # at all: asking for at most two thousand characters took the
+                # server from working to returning 500 on every call. The
+                # argument carries source code, so it must stay unbounded.
                 "argument": {"type": "string"},
             },
             "required": ["thought", "tool", "argument"],
@@ -61,6 +69,10 @@ class LocalAgent:
         self.tools: dict[str, tuple[str, Callable[[str], str]]] = o.get("tools") or {}
         self.max_turns = int(o.get("max_turns", 12))
         self.max_result_chars = int(o.get("max_result_chars", 1500))
+        # A step that carries source code in its argument needs room. Too
+        # small a budget truncates the json mid-string, which parses as no
+        # step at all and looks exactly like a model that refused to answer.
+        self.step_tokens = int(o.get("step_tokens", 1600))
         self.server = LocalServer({
             "base_url": o.get("base_url", "http://127.0.0.1:8080"),
             "model": o.get("model", "local"),
@@ -87,6 +99,7 @@ class LocalAgent:
         cap = min(int(turn_cap or self.max_turns), self.max_turns)
         self.transcript = []
         repeats: dict[tuple[str, str], int] = {}
+        dud = 0
         outcome, evidence = "failed", "the loop ended without a verdict"
 
         for turn in range(cap):
@@ -100,12 +113,24 @@ class LocalAgent:
                   "and try a different approach rather than asserting the result."
             )
             self.server.schema = schema
-            raw = self.server.complete("", prompt, max_tokens=700)
+            raw = self.server.complete("", prompt, max_tokens=self.step_tokens)
             step = self._parse(raw)
             if step is None:
                 self.transcript.append(
                     f"[{turn + 1}] the model produced no usable step: {raw[:160]}")
+                # A brain that cannot answer at all is not a brain that needs
+                # more turns. Ten attempts against a server returning 500 is
+                # ten times the wait for the same nothing, so unusable replies
+                # in a row end the session with the reason visible.
+                dud += 1
+                if dud >= 3:
+                    outcome = "failed"
+                    evidence = (f"the model returned nothing usable {dud} times "
+                                f"in a row: {raw[:200]}")
+                    self.transcript.append(f"[{turn + 1}] loop stopped: {evidence}")
+                    break
                 continue
+            dud = 0
 
             tool, arg = step.get("tool", ""), str(step.get("argument", ""))
             if tool == "done":
@@ -121,20 +146,21 @@ class LocalAgent:
             self.transcript.append(
                 f"[{turn + 1}] {tool}({arg[:120]}) -> {result[:self.max_result_chars]}")
 
-            # A small model does not readily abandon a failing approach: it
-            # will reissue the identical call until the cap. Repetition is
-            # therefore treated as the loop's problem, not the model's, and
-            # after a few identical failures the loop says so plainly and
-            # stops rather than burning the remaining turns on it.
+            # A small model does not readily abandon an approach that is not
+            # working: it reissues the identical call until the cap. The guard
+            # is on REPETITION, not on failure, because a search that keeps
+            # returning "no results" is a successful call and the same dead
+            # end, and an identical call with an identical argument cannot
+            # produce new information whatever it returns.
             signature = (tool, arg)
-            if result.startswith("the tool raised") or result.startswith("no such tool"):
-                repeats[signature] = repeats.get(signature, 0) + 1
-                if repeats[signature] >= 3:
-                    outcome = "failed"
-                    evidence = (f"the same call failed {repeats[signature]} times "
-                                f"({tool}): {result[:200]}")
-                    self.transcript.append(f"[{turn + 1}] loop stopped: {evidence}")
-                    break
+            repeats[signature] = repeats.get(signature, 0) + 1
+            if repeats[signature] >= 3:
+                outcome = "failed"
+                evidence = (f"the same call was made {repeats[signature]} times "
+                            f"with the same argument ({tool}), which cannot "
+                            f"produce anything new: {result[:150]}")
+                self.transcript.append(f"[{turn + 1}] loop stopped: {evidence}")
+                break
         else:
             outcome = "failed"
             evidence = f"turn cap reached ({cap}) with no conclusion"

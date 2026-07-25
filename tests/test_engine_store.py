@@ -51,3 +51,20 @@ def test_full_cycle_mock():
         con = store.connect()
         assert con.execute("SELECT COUNT(*) FROM journal").fetchone()[0] == 1
         con.close()
+
+
+def test_risk_hints_do_not_fire_inside_innocent_words():
+    """Found live: a guard for "production" matched re-PROD-uce and parked an
+    exact-arithmetic computation. In a mathematics workload "sudo" would have
+    done the same to every pseudo-inverse. A guard that strangles legitimate
+    work gets switched off, and then it guards nothing."""
+    from reverie_automata.engine import RISKY_HINTS
+    for innocent in ("reproduce the published claim exactly",
+                     "compute the pseudo-inverse of A",
+                     "check the pseudorandom sequence",
+                     "reproduction of example 5"):
+        assert not RISKY_HINTS.search(innocent), innocent
+    for genuine in ("sudo rm -rf /", "systemctl restart the gateway",
+                    "deploy to production", "delete the table",
+                    "install the package", "the password is in .env"):
+        assert RISKY_HINTS.search(genuine), genuine

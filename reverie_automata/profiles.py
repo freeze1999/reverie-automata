@@ -27,30 +27,38 @@ from typing import Any
 # The plan envelope expressed as a schema. Given this, malformed structure is
 # impossible rather than unlikely, which removes the entire failure class a
 # small brain actually has.
+#
+# The length caps are load-bearing, not tidiness. Observed live: the model
+# wrote a rambling risk_reason, ran out of budget before closing the envelope,
+# and the truncated json parsed as nothing, which the engine correctly read as
+# "no plan" and the validator then flagged as a false no-op. Two cycles were
+# lost to a sentence that had no value at any length. A cap is the same trick
+# as the grammar itself: make the failure impossible rather than discourage it.
 PLAN_SCHEMA: dict[str, Any] = {
     "name": "plan",
     "schema": {
         "type": "object",
         "properties": {
-            "learned": {"type": "string"},
+            "learned": {"type": "string", "maxLength": 400},
             "tasks": {
                 "type": "array",
+                "maxItems": 3,
                 "items": {
                     "type": "object",
                     "properties": {
-                        "id": {"type": "string"},
-                        "what": {"type": "string"},
-                        "why": {"type": "string"},
-                        "evidence": {"type": "string"},
+                        "id": {"type": "string", "maxLength": 8},
+                        "what": {"type": "string", "maxLength": 240},
+                        "why": {"type": "string", "maxLength": 300},
+                        "evidence": {"type": "string", "maxLength": 240},
                         "mode": {"enum": ["tool", "text", "delegate"]},
                         "risk": {"enum": ["SAFE", "RISKY"]},
-                        "risk_reason": {"type": "string"},
+                        "risk_reason": {"type": "string", "maxLength": 200},
                     },
                     "required": ["id", "what", "why", "mode", "risk"],
                 },
             },
             "do_nothing": {"type": "boolean"},
-            "do_nothing_reason": {"type": "string"},
+            "do_nothing_reason": {"type": "string", "maxLength": 300},
         },
         "required": ["learned", "tasks", "do_nothing"],
     },
