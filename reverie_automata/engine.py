@@ -77,10 +77,18 @@ class Engine:
 
     def run_cycle(self, now: datetime | None = None, text_only: bool = False) -> Outcome:
         now = now or datetime.now()
-        ts = now.strftime("%Y-%m-%d-%H%M%S")
+        con = self.store.connect()
+        # A work-gated heartbeat can fire twice inside one second when cycles
+        # are short (a no-op cycle costs milliseconds), and a second-resolution
+        # id then collides on the primary key and kills the second cycle. The
+        # idle engine could never do this; the standing one does it routinely.
+        ts = base = now.strftime("%Y-%m-%d-%H%M%S")
+        n = 1
+        while con.execute("SELECT 1 FROM cycles WHERE ts=?", (ts,)).fetchone():
+            ts = f"{base}-{n}"
+            n += 1
         cdir = self.home / "cycles" / ts
         cdir.mkdir(parents=True, exist_ok=True)
-        con = self.store.connect()
 
         orphan = self.store.orphaned_cycle(con)
         if orphan:

@@ -166,3 +166,17 @@ def test_a_failing_task_cannot_spin_the_heartbeat(tmp_path):
     store.add_thread(con, "a request from a person")      # defer defaults off
     assert assess_work(con, store, None, {"thread_cooldown_minutes": 60})
     con.close()
+
+
+def test_two_cycles_in_one_second_do_not_collide(tmp_path):
+    """A fast heartbeat fires again the moment work remains due, and a no-op
+    cycle costs milliseconds, so two cycles inside one second is ordinary
+    rather than exotic. Second-resolution ids must not collide."""
+    r = _runner(_cfg(tmp_path))
+    box = r.engine.inbox
+    box.dir.mkdir(parents=True, exist_ok=True)
+    for i in range(3):
+        (box.dir / f"d{i}.md").write_text("please look at the thing")
+        assert r.tick()["fired"] is True
+    ids = sorted(p.name for p in (Path(r.cfg["home"]) / "cycles").glob("*"))
+    assert len(ids) == 3 and len(set(ids)) == 3

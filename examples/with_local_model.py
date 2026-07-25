@@ -17,6 +17,7 @@ HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
 from reverie_automata.config import Config          # noqa: E402
+from reverie_automata.profiles import small_local, standing_operative  # noqa: E402
 from reverie_automata.runner import Runner          # noqa: E402
 from reverie_automata.adapters.local_server import LocalServer  # noqa: E402
 
@@ -24,48 +25,11 @@ BASE = "http://127.0.0.1:8080"
 if "--base" in sys.argv:
     BASE = sys.argv[sys.argv.index("--base") + 1].rstrip("/")
 
-# The plan envelope as a schema: the model cannot emit malformed structure,
-# which removes the entire class of failure a small brain actually has.
-PLAN_SCHEMA = {
-    "name": "plan",
-    "schema": {
-        "type": "object",
-        "properties": {
-            "learned": {"type": "string"},
-            "tasks": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "what": {"type": "string"},
-                        "why": {"type": "string"},
-                        "evidence": {"type": "string"},
-                        "mode": {"enum": ["tool", "text", "delegate"]},
-                        "risk": {"enum": ["SAFE", "RISKY"]},
-                        "risk_reason": {"type": "string"},
-                    },
-                    "required": ["id", "what", "why", "mode", "risk"],
-                },
-            },
-            "do_nothing": {"type": "boolean"},
-            "do_nothing_reason": {"type": "string"},
-        },
-        "required": ["learned", "tasks", "do_nothing"],
-    },
-}
-
-
 def main():
-    probe = LocalServer({"base_url": BASE})
-    n_ctx = probe.server_context()
+    n_ctx = LocalServer({"base_url": BASE}).server_context()
     if not n_ctx:
         print(f"no server at {BASE} (or /props unavailable); start it first")
         return 1
-    # Trust the window the server reports, never the one we asked for: it
-    # splits context across slots and silently shrinks past its fitting limit.
-    spine = max(1200, int(n_ctx * 0.5))
-    print(f"server window: {n_ctx} tokens -> spine budget {spine}")
 
     home = Path("local-alpha-data")
     shutil.rmtree(home, ignore_errors=True)
@@ -75,18 +39,19 @@ def main():
         "published result about cubic-linear polynomial maps that can be\n"
         "checked by exact computation. Do not attempt a proof.\n")
 
+    # Two named bundles do the work: one for what kind of brain this is, one
+    # for what kind of shift it is working.
     cfg = Config()
+    cfg.data.update(small_local(BASE, n_ctx=n_ctx))
+    cfg.data.update(standing_operative())
     cfg.data.update({
         "home": str(home),
-        "harvest_max_tokens": spine,
-        "max_tasks_per_cycle": 1,
         "window": {"start": 0, "end": 0},        # always in window for a demo
-        "idle_minutes": 0,
-        "planner": {"backend": "local_server", "options": {
-            "base_url": BASE, "model": "local", "thinking": False,
-            "schema": PLAN_SCHEMA, "temperature": 0.6}},
+        "min_gap_minutes": 0,
         "agent": {"backend": "mock", "options": {}},
     })
+    print(f"server window {n_ctx} -> spine {cfg['harvest_max_tokens']}, "
+          f"trigger={cfg['trigger']}")
 
     runner = Runner(cfg, last_input_ts=lambda: time.time() - 7200,
                     is_available=lambda: True)
