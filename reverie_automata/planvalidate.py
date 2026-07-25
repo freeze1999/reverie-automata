@@ -22,6 +22,8 @@ reliable claim.
 """
 from __future__ import annotations
 
+import re
+
 # Words that are a category, not a task. A `what` consisting of one of these
 # says nothing about what would actually be done.
 _EMPTY_INTENTS = {
@@ -30,6 +32,17 @@ _EMPTY_INTENTS = {
 }
 
 MIN_WHAT_CHARS = 15
+
+# Work that plainly touches the world cannot be done from memory. A planner
+# that labels "read the file" as a text task is not lying, it has simply
+# mis-sorted itself, and the engine will then hand it a prompt with no tools
+# and get an honest "I cannot reach that" back. Upgrading is the safe
+# direction: a task given tools it did not need loses nothing, while a task
+# denied tools it needed is stranded.
+_NEEDS_TOOLS = re.compile(
+    r"\b(read|open|list|search|fetch|download|look\s?up|browse|query|"
+    r"run|execute|compute|calculate|verify|check|test|"
+    r"write|save|record|append|log|edit|create|file)\b", re.I)
 
 
 def _is_content_free(what: str) -> bool:
@@ -41,8 +54,8 @@ def _is_content_free(what: str) -> bool:
     return len(w) < MIN_WHAT_CHARS
 
 
-def validate_plan(plan: dict, *, work_available: bool, max_tasks: int = 1
-                  ) -> tuple[dict, list[str], bool]:
+def validate_plan(plan: dict, *, work_available: bool, max_tasks: int = 1,
+                  allow_text_tasks: bool = True) -> tuple[dict, list[str], bool]:
     """(repaired_plan, complaints, needs_replan).
 
     `work_available` comes from the engine's own eligibility check (a pending
@@ -69,6 +82,22 @@ def validate_plan(plan: dict, *, work_available: bool, max_tasks: int = 1
             if _is_content_free(str(t.get("what", ""))):
                 complaints.append(f"task {t.get('id', '?')!r} had no content in `what`; dropped")
                 continue
+            if str(t.get("mode", "")).lower() == "text" and not allow_text_tasks:
+                # Observed live on a small brain: asked to work without tools,
+                # it produced a fluent and entirely invented account of the
+                # subject, opening with "I have reviewed the text". Nothing
+                # grounds a text task, so for such a brain there is no text
+                # task; everything goes through tools, where each claim traces
+                # to something a tool actually returned.
+                complaints.append(
+                    f"task {t.get('id', '?')!r} filed as text, but this profile "
+                    "grounds every claim in a tool result; upgraded")
+                t = dict(t, mode="tool")
+            elif (str(t.get("mode", "")).lower() == "text"
+                    and _NEEDS_TOOLS.search(str(t.get("what", "")))):
+                complaints.append(
+                    f"task {t.get('id', '?')!r} needs tools but was filed as text; upgraded")
+                t = dict(t, mode="tool")
             kept.append(t)
         if len(kept) > max_tasks:
             complaints.append(f"{len(kept)} tasks proposed, cap is {max_tasks}; kept the first")

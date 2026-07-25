@@ -74,3 +74,34 @@ def test_junk_input_never_raises():
     for junk in (None, {}, {"tasks": "not a list"}, {"tasks": [None, 3, "x"]}):
         plan, _, _ = validate_plan(junk, work_available=False)
         assert isinstance(plan.get("tasks"), list)
+
+
+def test_work_that_touches_the_world_is_not_left_without_tools():
+    """Observed live: the planner filed "read program/PROGRAM.md" as a text
+    task, so the engine ran it with no tools and got an honest "I cannot reach
+    that" back. The task was right and its label was wrong."""
+    plan, complaints, _ = validate_plan(
+        {"tasks": [{"id": "t1", "what": "read program/PROGRAM.md and summarise it",
+                    "why": "context", "mode": "text", "risk": "SAFE"}],
+         "do_nothing": False}, work_available=True)
+    assert plan["tasks"][0]["mode"] == "tool"
+    assert any("needs tools but was filed as text" in c for c in complaints)
+
+
+def test_genuine_reflection_stays_text():
+    plan, complaints, _ = validate_plan(
+        {"tasks": [{"id": "t1", "what": "decide which of the two framings is better",
+                    "why": "a judgement call", "mode": "text", "risk": "SAFE"}],
+         "do_nothing": False}, work_available=True)
+    assert plan["tasks"][0]["mode"] == "text" and not complaints
+
+
+def test_a_profile_can_require_every_claim_to_come_from_a_tool():
+    """Observed live: given no tools, a small brain wrote a fluent invented
+    account of the subject and opened it with "I have reviewed the text"."""
+    plan, complaints, _ = validate_plan(
+        {"tasks": [{"id": "t1", "what": "summarise what you already know about it",
+                    "why": "reflection", "mode": "text", "risk": "SAFE"}],
+         "do_nothing": False}, work_available=True, allow_text_tasks=False)
+    assert plan["tasks"][0]["mode"] == "tool"
+    assert any("grounds every claim in a tool result" in c for c in complaints)

@@ -46,6 +46,12 @@ class LocalServer:
         self.timeout_s = int(o.get("timeout_s", 600))
         # {"name": ..., "schema": {...}} to force valid structure
         self.schema = o.get("schema")
+        # A grammar describes ONE expected shape, so it must not be applied to
+        # every prompt this backend serves. The harness reuses one planner for
+        # both planning and text-only execution; forcing the plan schema on the
+        # second makes the model answer a question it was not asked. When set,
+        # the schema applies only to prompts that actually request that shape.
+        self.schema_marker = o.get("schema_marker")
         # markers re-attached around schema output so the harness parses it
         self.open_tag = o.get("open_tag", "<<PLAN>>")
         self.close_tag = o.get("close_tag", "<<END>>")
@@ -74,7 +80,9 @@ class LocalServer:
         }
         if not self.thinking:
             body["chat_template_kwargs"] = {"enable_thinking": False}
-        if self.schema:
+        use_schema = bool(self.schema) and (
+            self.schema_marker is None or self.schema_marker in (user or ""))
+        if use_schema:
             body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {"name": self.schema.get("name", "envelope"),
@@ -102,7 +110,7 @@ class LocalServer:
                         f"token budget ran out ({choice.get('finish_reason')}); "
                         "no envelope was produced]")
             return "[local server: empty response]"
-        if self.schema and not text.startswith(self.open_tag):
+        if use_schema and not text.startswith(self.open_tag):
             text = f"{self.open_tag}{text}{self.close_tag}"
         return text
 

@@ -144,3 +144,20 @@ def test_overrides_win_over_the_profile(monkeypatch):
 def test_standing_operative_arms_on_work():
     cfg = standing_operative()
     assert cfg["trigger"] == "work" and cfg["thread_cooldown_minutes"] > 0
+
+
+def test_a_grammar_applies_only_to_the_shape_it_describes(monkeypatch):
+    """One planner serves both planning and text-only execution. A schema
+    bound to every call makes the second answer the first one's question."""
+    cap = _Captured(_reply(content='{"do_nothing": true}'))
+    _patch(monkeypatch, cap)
+    srv = LS.LocalServer({"base_url": "http://x", "schema": PLAN_SCHEMA,
+                          "schema_marker": "<<PLAN>>"})
+
+    srv.complete("", "... emit one envelope <<PLAN>>{...}<<END>>")
+    assert "response_format" in cap.body
+
+    cap.body = None
+    out = srv.complete("", "do the task, close with <<RESULT>>done<<END>>")
+    assert "response_format" not in cap.body
+    assert not out.startswith("<<PLAN>>")

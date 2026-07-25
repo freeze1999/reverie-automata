@@ -192,10 +192,11 @@ class Mock:
         return self._reply(directive)
 
 
-from .local_server import LocalServer  # noqa: E402  (registry lives below)
+from .local_agent import LocalAgent    # noqa: E402  (registry lives below)
+from .local_server import LocalServer  # noqa: E402
 
 REGISTRY = {a.name: a for a in [ClaudeCode, Codex, Cursor, Devin, Windsurf,
-                                Cline, Pi, LocalServer, Mock]}
+                                Cline, Pi, LocalServer, LocalAgent, Mock]}
 
 
 def build_agent(spec: dict[str, Any]):

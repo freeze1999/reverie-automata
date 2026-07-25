@@ -116,7 +116,8 @@ class Engine:
             limit=1))
         plan, plan_complaints, false_no_op = validate_plan(
             plan, work_available=work_available,
-            max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)))
+            max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)),
+            allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)))
         for c in plan_complaints:
             print(f"[plan] {c}")
 

@@ -76,9 +76,14 @@ def small_local(base_url: str, *, model: str = "local", n_ctx: int | None = None
         "harvest_max_tokens": spine,
         "max_tasks_per_cycle": 1,
         "thread_cooldown_minutes": 60,
+        # No ungrounded work. A brain this size, asked to produce from memory,
+        # writes confident fiction; asked to produce from a tool result, it
+        # reports what the tool said. The difference is not its honesty, it is
+        # whether anything was holding the other end.
+        "allow_text_tasks": False,
         "planner": {"backend": "local_server", "options": {
-            "base_url": base_url, "model": model,
-            "thinking": False, "schema": PLAN_SCHEMA}},
+            "base_url": base_url, "model": model, "thinking": False,
+            "schema": PLAN_SCHEMA, "schema_marker": "<<PLAN>>"}},
     }
     cfg.update(over)
     return cfg

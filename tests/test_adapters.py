@@ -49,7 +49,7 @@ def test_extra_args_are_appended():
 
 def test_registry_holds_every_backend():
     assert set(REGISTRY) == {"claude_code", "codex", "cursor", "devin",
-                             "windsurf", "cline", "pi", "local_server", "mock"}
+                             "windsurf", "cline", "pi", "local_server", "local_agent", "mock"}
 
 
 def test_build_agent_unknown_backend_fails_loudly():
