@@ -119,10 +119,18 @@ def refresh(con, store, directory, *, now: float | None = None,
             continue
         if store.has_open_titled(con, m.title):
             continue
-        # A mandate whose thread was closed does not come back instantly; the
-        # cadence is the minimum gap between refilings, which is what keeps a
-        # completed objective from being reissued on the very next tick.
-        if m.cadence_hours and now - float(last.get(m.id, 0)) < m.cadence_hours * 3600:
+        # Has this objective EVER been served here? The cadence is a gap
+        # between refilings, so it can only apply once there has been a filing
+        # to measure from, and the record of that has to be the store rather
+        # than a side file. Found live: a wiped database left the side file
+        # behind, the cadence then held against a filing this instance had no
+        # memory of, and the standing order silently never came back. Nothing
+        # was due, so nothing fired, so nothing became due, which is the exact
+        # failure mandates exist to prevent, reintroduced through the back door.
+        served = con.execute("SELECT 1 FROM threads WHERE title=? LIMIT 1",
+                             (m.title,)).fetchone() is not None
+        if served and m.cadence_hours and \
+                now - float(last.get(m.id, 0)) < m.cadence_hours * 3600:
             continue
         store.add_thread(con, m.title, m.body, kind=m.priority,
                          created_cycle=None, defer=False, unique=True)

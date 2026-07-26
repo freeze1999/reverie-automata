@@ -106,3 +106,22 @@ def test_one_unreadable_file_does_not_cost_the_others(tmp_path):
     d = _dir(tmp_path)
     (d / "._program-a.md").write_bytes(b"\x00\xa3\xff Mac metadata, not text")
     assert len(M.refresh(con, store, d)) == 1
+
+
+def test_a_wiped_store_brings_the_standing_order_back(tmp_path):
+    """Found live. The side file recording the last filing survived a database
+    wipe, the cadence then held against a filing this instance had no memory
+    of, and the standing order never returned: nothing due, so nothing fired,
+    so nothing became due. The failure mandates exist to prevent, arriving
+    through the back door of two records that could disagree."""
+    store, con = _store(tmp_path)
+    d = _dir(tmp_path)
+    state = tmp_path / "mandate_state.json"
+    assert M.refresh(con, store, d, state_path=state)
+
+    con.close()                                   # wipe the store, keep the file
+    (tmp_path / "state.db").unlink()
+    store2 = Store(tmp_path / "state.db")
+    con2 = store2.connect()
+    assert state.exists()
+    assert M.refresh(con2, store2, d, state_path=state), "the objective is still in force"
