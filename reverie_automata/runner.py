@@ -12,7 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+from . import events
 from . import gate as G
+from . import mandate as M
 from .config import Config
 from .engine import Engine
 from .harvest import Harvester
@@ -20,6 +22,7 @@ from .inspector import Inspector
 from .store import Store
 from .workgate import assess_work
 from .adapters.agents import build_agent
+from .adapters.delegates import build_delegate
 from .adapters.transports import build_transport
 
 
@@ -53,6 +56,8 @@ class Runner:
         self.lock = self.home / ".fire.lock"
         self.kill = self.home / "KILL"
         self.store = Store(self.home / "state.db")
+        self.delegate = build_delegate(cfg.get("delegation"))
+        self.mandates = self.home / str(cfg.get("mandates_dir", "mandates"))
         self.engine = Engine(
             cfg, self.store,
             Harvester(cfg, self.store, self.home / "MEMORY.md"),
@@ -60,12 +65,50 @@ class Runner:
             build_agent(cfg["agent"]),
             build_agent(cfg["planner"]),
             build_transport(cfg["approval"]),
+            delegate=self.delegate,
         )
+
+    # -- housekeeping, outside the cycle -------------------------------------
+    def collect(self) -> list[str]:
+        """Take in whatever the delegate answered, and close what it closed.
+
+        Deliberately not a tool the agent can call. A result nobody collected
+        is a job that silently never finished, and the one thing you cannot
+        trust to remember a chore is the thing that had a bad night.
+        """
+        notes = []
+        try:
+            for res in self.delegate.collect():
+                notes.append(str(res.get("note", res))[:200])
+                events.emit(self.home, "collect", **{
+                    k: v for k, v in res.items() if k != "raw"})
+        except Exception as e:  # noqa: BLE001
+            events.emit(self.home, "collect_error", error=f"{type(e).__name__}: {e}")
+        return notes
+
+    def standing_orders(self) -> list[str]:
+        """Refile any standing objective that has no open thread. This is what
+        keeps a work-gated engine from running its queue dry and stopping
+        forever, and it happens before the gate is asked anything."""
+        con = self.store.connect()
+        try:
+            filed = M.refresh(con, self.store, self.mandates,
+                              state_path=self.home / "mandate_state.json")
+        except Exception as e:  # noqa: BLE001
+            events.emit(self.home, "mandate_error", error=f"{type(e).__name__}: {e}")
+            filed = []
+        finally:
+            con.close()
+        for t in filed:
+            events.emit(self.home, "mandate", title=t)
+        return filed
 
     def tick(self) -> Optional[dict]:
         now = datetime.now()
         G.reap_lock(self.lock, self.cfg)
         state = G.load_state(self.state_file)
+        self.collect()
+        self.standing_orders()
 
         # The cheap question first: one indexed query and a directory scan.
         # A heartbeat tick with nothing due stops here, having spent no model

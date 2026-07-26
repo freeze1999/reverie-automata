@@ -21,9 +21,11 @@ from datetime import datetime
 from pathlib import Path
 
 from . import blast
+from . import events
 from . import prompts as P
 from .inbox import Inbox
 from .planvalidate import validate_plan
+from .routing import DELEGATE, route
 from .types import ActionClass, Lesson, Outcome, Risk
 
 
@@ -69,9 +71,11 @@ RISKY_HINTS = re.compile(
 
 
 class Engine:
-    def __init__(self, cfg, store, harvester, inspector, agent, planner, approvals):
+    def __init__(self, cfg, store, harvester, inspector, agent, planner, approvals,
+                 delegate=None):
         self.cfg, self.store, self.harvest = cfg, store, harvester
         self.inspector, self.agent, self.planner, self.approvals = inspector, agent, planner, approvals
+        self.delegate = delegate
         self.home = cfg.home
         self.memory_path = self.home / "MEMORY.md"
         self.inbox = Inbox(self.home / "inbox", cfg)
@@ -127,6 +131,17 @@ class Engine:
             allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)))
         for c in plan_complaints:
             print(f"[plan] {c}")
+        # The reasoning, not the log line: what it saw as due, what it decided
+        # to do about that, and every objection the wrapper raised to the
+        # decision. Read across a run, this is where drift becomes visible.
+        events.emit(self.home, "plan", cycle=ts, work_available=work_available,
+                    inbox=len(inbox_files), do_nothing=bool(plan.get("do_nothing")),
+                    do_nothing_reason=str(plan.get("do_nothing_reason", ""))[:300],
+                    learned=str(plan.get("learned", ""))[:400],
+                    tasks=[{"id": t.get("id"), "what": str(t.get("what", ""))[:200],
+                            "why": str(t.get("why", ""))[:200], "mode": t.get("mode"),
+                            "risk": t.get("risk")} for t in plan.get("tasks", [])],
+                    complaints=plan_complaints, false_no_op=false_no_op)
 
         # A drop is spent by a cycle that ENGAGED with it. A cycle that
         # wrongly declared there was nothing to do did not engage, and
@@ -196,6 +211,11 @@ class Engine:
             "blast_radius": touched, "inbox_consumed": n_inbox,
             "plan_complaints": plan_complaints, "false_no_op": false_no_op,
             "lessons": [l.__dict__ for l in lessons]}, ensure_ascii=False, indent=2), encoding="utf-8")
+        events.emit(self.home, "cycle", cycle=ts, grade=grade,
+                    statuses=[e["status"] for e in ledger],
+                    blast=len(touched), inbox_consumed=n_inbox,
+                    lessons=[f"{l.situation} -> {l.action} -> {l.outcome}" for l in lessons],
+                    journal=journal[:600])
         return outcome
 
     # -- one task -----------------------------------------------------------
@@ -210,6 +230,36 @@ class Engine:
                                   json.dumps(task, ensure_ascii=False), kind="approval",
                                   created_cycle=ts, defer=True, unique=True)
             return {"id": tid, "status": "parked", "what": what}
+        # Routing, before any work is attempted. The model has already had its
+        # say (it wrote the task); this is the wrapper deciding who does it,
+        # and the reason is quoted from the task's own words so the decision
+        # can be argued with later.
+        where, why = route(task, self.cfg)
+        if where == DELEGATE and self.delegate is not None:
+            job_id, note = self.delegate.file(task, cycle=ts)
+            events.emit(self.home, "route", cycle=ts, task=tid, where=where,
+                        reason=why, job=job_id, note=note, what=what[:200])
+            if job_id:
+                # Deferred, so the next tick does not immediately re-plan work
+                # that is already out for answer. The thread is the obligation:
+                # while it is open the job is not forgotten, and when the answer
+                # lands the cycle that reads it has the context to use it.
+                self.store.add_thread(con, f"awaiting job {job_id}: {what[:80]}",
+                                      json.dumps({"job": job_id, "task": task},
+                                                 ensure_ascii=False),
+                                      kind="delegated", created_cycle=ts,
+                                      defer=True, unique=True)
+                return {"id": tid, "status": "delegated", "what": what,
+                        "verify": f"job {job_id} filed: {why}"}
+            # A delegate that could not file is a delegate that is down. Doing
+            # the work badly here beats not doing it at all, and the event
+            # above records that the handoff was intended and missed.
+            print(f"[route] delegation unavailable ({note}); running locally")
+        elif where == DELEGATE:
+            events.emit(self.home, "route", cycle=ts, task=tid, where="local",
+                        reason=f"would delegate ({why}) but no delegate is configured",
+                        what=what[:200])
+
         if text_only and task.get("mode") == "tool":
             self.store.add_thread(con, f"deferred (text-only budget): {what[:100]}", "",
                                   created_cycle=ts, defer=True, unique=True)
@@ -241,6 +291,9 @@ class Engine:
         if status == "failed":
             self.store.add_thread(con, f"resume failed task: {what[:100]}", verify[:400],
                                   created_cycle=ts, defer=True, unique=True)
+        events.emit(self.home, "task", cycle=ts, task=tid, status=status,
+                    mode=task.get("mode"), what=what[:200], verify=verify[:400],
+                    steps=raw.count("\n[") or None)
         return {"id": tid, "status": status, "what": what, "verify": verify[:200]}
 
     def _file_approval(self, con, ts, task, reason):
