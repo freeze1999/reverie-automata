@@ -64,3 +64,22 @@ def test_routing_can_be_switched_off_whole():
 def test_the_reason_quotes_the_task_so_a_person_can_argue_with_it():
     _, why = route({"what": "implement exactly the algorithm supplied"})
     assert "implement" in why and "supplied" in why
+
+
+def test_a_named_published_object_is_fidelity_work():
+    """The most expensive miss of the run. "Execute the sympy script from the
+    inbox to compute the rank ... of the 4x4 Druzkowski matrix over Z[i]" hit
+    the authoring half and no fidelity marker, ran locally, and the brain
+    invented a matrix, computed it correctly, and earned an A for a receipt
+    that proved a computation had happened and nothing about what it was of."""
+    where, why = route({"what": "Execute the sympy script from the inbox to "
+                                "compute the rank, characteristic polynomial, "
+                                "and nilpotency of the 4x4 Druzkowski matrix "
+                                "over Z[i]", "mode": "tool"})
+    assert where == DELEGATE, why
+
+
+def test_a_citation_or_example_number_counts_as_the_thing_to_match():
+    for what in ("write code for Example 5", "implement the map in arXiv:1503.08733",
+                 "write a script for 2407.07911"):
+        assert route({"what": what})[0] == DELEGATE, what

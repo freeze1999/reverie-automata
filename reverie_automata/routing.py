@@ -39,8 +39,16 @@ AUTHOR = (r"\bwrite\b|\bimplement\b|\brewrite\b|\bport\b|"
 
 # Faithfulness: the artifact must agree with something already given.
 FIDELITY = (r"\bgiven\b|\bsupplied\b|\bprovided\b|\babove\b|\bpublished\b|"
-            r"\bthis matrix\b|\bthe matrix\b|\bexactly\b|\bverbatim\b|"
-            r"\bfrom the (paper|drop|citation|source)\b|"
+            r"\bexactly\b|\bverbatim\b|"
+            # A specific named object. The first version wanted the literal
+            # words "the matrix", and a task saying "the 4x4 Druzkowski matrix
+            # over Z[i]" walked straight past it, ran locally, and the brain
+            # invented a matrix, computed it correctly, and was graded A for a
+            # receipt that proved a computation had happened and nothing about
+            # what it was a computation of.
+            r"\bthe [\w\-]{0,12}\s?[\w\-]{0,12}\s?matrix\b|"
+            r"\bexample\s+\d|\barxiv[:\s]|\b\d{4}\.\d{4,5}\b|"
+            r"\bfrom the (paper|drop|citation|source|inbox|log|record)\b|"
             r"\bas (stated|written|specified)\b|"
             r"给定|提供|上述|已发表|按照|原样|忠于")
 
