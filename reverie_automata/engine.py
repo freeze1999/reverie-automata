@@ -347,6 +347,17 @@ class Engine:
             # delegate that is merely BUSY should not make the engine attempt
             # the exact thing it delegated the task to avoid; the work waits,
             # because the reason it was routed out has not changed.
+            # Already answered. Not a failure and not work: the question has
+            # been asked, accepted and written into the record, so the only
+            # correct action is to stop carrying it. Ten identical jobs went
+            # to a human collaborator before this existed.
+            if str(note).startswith("solved:"):
+                if task.get("thread"):
+                    self.store.close_thread(con, task["thread"], note)
+                events.emit(self.home, "solved", cycle=ts, task=tid,
+                            note=note, what=what[:200])
+                return {"id": tid, "status": "skipped", "what": what,
+                        "verify": note}
             if str(note).startswith("defer:") or "concurrency cap" in str(note):
                 self.store.add_thread(con, f"waiting on a free worker: {what[:80]}",
                                       json.dumps(task, ensure_ascii=False),

@@ -151,6 +151,25 @@ class Store:
                     (time.time() if now is None else now, thread_id))
         con.commit()
 
+    def close_thread(self, con, thread_id, note: str = "") -> bool:
+        """Retire a thread because the work behind it is finished.
+
+        Without this a completed obligation stays due forever, and a work-gated
+        engine re-plans it every cycle. Watched live: a question that had been
+        answered, accepted and written into the record was re-asked of a human
+        collaborator ten times, because the thread that carried it had no way
+        to end. Finishing work has to be able to close the reason for it.
+        """
+        try:
+            cur = con.execute(
+                "UPDATE threads SET status='done', body=COALESCE(body,'') || ?, "
+                "updated_at=? WHERE id=? AND status='open'",
+                (f"\n[closed] {note}"[:500], time.time(), int(thread_id)))
+            con.commit()
+            return cur.rowcount > 0
+        except (sqlite3.Error, TypeError, ValueError):
+            return False
+
     def open_threads(self, con, limit: int = 50):
         return con.execute(f"SELECT id, kind, title FROM threads WHERE status='open' "
                            f"ORDER BY {THREAD_PRIORITY}, id LIMIT ?", (limit,)).fetchall()
