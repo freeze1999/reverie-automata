@@ -151,3 +151,20 @@ def test_the_run_leaves_a_readable_trace_of_its_decisions(tmp_path):
     r.tick()
     kinds = [e["kind"] for e in events.read(r.cfg["home"])]
     assert {"plan", "route", "cycle"} <= set(kinds)
+
+
+def test_a_busy_delegate_defers_rather_than_failing_locally(tmp_path):
+    """A delegate that is DOWN and one that is BUSY wear the same empty job id,
+    and treating them alike is wrong either way. Falling back to local is right
+    when no worker exists; when one exists and is merely full, running the task
+    here attempts the exact thing it was routed out to avoid."""
+    class Busy(SpyDelegate):
+        def file(self, task, *, cycle=""):
+            return "", "defer: 3 job(s) already open, at the concurrency cap"
+
+    r = _runner(tmp_path, {"tasks": [dict(AUTHORING)], "do_nothing": False})
+    r.engine.delegate = Busy()
+    _drop(r)
+    r.tick()
+    assert _ledger(r)[0]["status"] == "deferred"
+    delegates.REGISTRY["spy"] = SpyDelegate
