@@ -94,3 +94,15 @@ def test_a_malformed_mandate_is_skipped_not_fatal(tmp_path):
     d = _dir(tmp_path)
     (d / "broken.md").write_text("")
     assert len(M.refresh(con, store, d)) == 1
+
+
+def test_one_unreadable_file_does_not_cost_the_others(tmp_path):
+    """Found moving a live instance between machines: a macOS AppleDouble
+    sidecar rode along inside the archive, was binary, and raised on decode.
+    The whole load failed, nothing was filed, and the engine then correctly did
+    nothing forever, because with no standing order nothing is ever due. It
+    looked exactly like an honest quiet night."""
+    store, con = _store(tmp_path)
+    d = _dir(tmp_path)
+    (d / "._program-a.md").write_bytes(b"\x00\xa3\xff Mac metadata, not text")
+    assert len(M.refresh(con, store, d)) == 1

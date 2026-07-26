@@ -75,14 +75,27 @@ def parse(text: str, fallback_id: str) -> Mandate | None:
 
 
 def load(directory) -> list[Mandate]:
+    """Every readable mandate. One unreadable file must never cost the rest.
+
+    Found moving a live instance between machines: a macOS AppleDouble sidecar
+    (`._program-a.md`) travelled inside the archive, is binary, and raised
+    UnicodeDecodeError. The caller caught it, filed nothing, and the engine
+    then correctly did nothing forever, because with no standing order nothing
+    is ever due. A single stray file silently switched off the organ that makes
+    the machine perpetual, and the failure looked exactly like an honest quiet
+    night. So: dot-files are skipped, decode errors are per-file, and a bad
+    mandate costs only itself.
+    """
     d = Path(directory)
     if not d.is_dir():
         return []
     out = []
     for p in sorted(d.glob("*.md")):
+        if p.name.startswith("."):
+            continue
         try:
             m = parse(p.read_text(encoding="utf-8"), fallback_id=p.stem)
-        except OSError:
+        except (OSError, UnicodeDecodeError, ValueError):
             continue
         if m:
             out.append(m)
