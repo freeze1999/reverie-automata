@@ -161,3 +161,30 @@ def test_a_grammar_applies_only_to_the_shape_it_describes(monkeypatch):
     out = srv.complete("", "do the task, close with <<RESULT>>done<<END>>")
     assert "response_format" not in cap.body
     assert not out.startswith("<<PLAN>>")
+
+
+def test_json_object_mode_puts_the_shape_in_the_prompt(monkeypatch):
+    """DeepSeek's official API answers "this response_format type is
+    unavailable now" to json_schema. The weaker mode guarantees valid json and
+    not the keys, so the shape has to be stated where the model can read it."""
+    from reverie_automata.adapters.local_server import LocalServer
+    sent = {}
+
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self):
+            return json.dumps({"choices": [{"message": {"content": '{"a": 1}'}}]}).encode()
+
+    def fake_urlopen(req, timeout=0):
+        sent["body"] = json.loads(req.data.decode())
+        sent["headers"] = req.headers
+        return R()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    s = LocalServer({"schema_mode": "json_object", "api_key": "k",
+                     "schema": {"name": "step", "schema": {"type": "object"}}})
+    s.complete("", "do the thing")
+    assert sent["body"]["response_format"] == {"type": "json_object"}
+    assert "ONE json object" in sent["body"]["messages"][-1]["content"]
+    assert sent["headers"]["Authorization"] == "Bearer k"

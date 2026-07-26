@@ -52,6 +52,18 @@ class LocalServer:
         # small" apart from "the work was badly specified", and those two
         # diagnoses lead to completely different projects.
         self.api_key = str(o.get("api_key") or "").strip()
+        # How to constrain the shape. `json_schema` is the strong form: the
+        # server compiles a grammar and malformed output becomes impossible
+        # rather than unlikely. Not every endpoint has it, and DeepSeek's
+        # official API answers "this response_format type is unavailable now",
+        # so `json_object` is the weaker fallback: valid json is guaranteed,
+        # the KEYS are not, and the required shape has to be stated in the
+        # prompt like an ordinary instruction.
+        #
+        # Worth being blunt about what that costs an experiment: two arms
+        # constrained by different mechanisms are not perfectly comparable.
+        # It is unavoidable here, so it is stated rather than smoothed over.
+        self.schema_mode = str(o.get("schema_mode", "json_schema"))
         self.schema = o.get("schema")
         # A grammar describes ONE expected shape, so it must not be applied to
         # every prompt this backend serves. The harness reuses one planner for
@@ -90,11 +102,20 @@ class LocalServer:
         use_schema = bool(self.schema) and (
             self.schema_marker is None or self.schema_marker in (user or ""))
         if use_schema:
-            body["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {"name": self.schema.get("name", "envelope"),
-                                "schema": self.schema["schema"], "strict": True},
-            }
+            if self.schema_mode == "json_object":
+                body["response_format"] = {"type": "json_object"}
+                # The shape moves into the prompt, because that is the only
+                # place left to put it when the server will not enforce it.
+                msgs[-1]["content"] += (
+                    "\n\nAnswer with ONE json object and nothing else, exactly "
+                    "this shape:\n"
+                    + json.dumps(self.schema["schema"], ensure_ascii=False))
+            elif self.schema_mode != "none":
+                body["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": self.schema.get("name", "envelope"),
+                                    "schema": self.schema["schema"], "strict": True},
+                }
         try:
             headers = {"Content-Type": "application/json"}
             if self.api_key:
