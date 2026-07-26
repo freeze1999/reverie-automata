@@ -45,6 +45,13 @@ class LocalServer:
         self.thinking = bool(o.get("thinking", False))
         self.timeout_s = int(o.get("timeout_s", 600))
         # {"name": ..., "schema": {...}} to force valid structure
+        # A bearer token, so the same adapter reaches a hosted OpenAI-compatible
+        # endpoint as well as a local one. This exists to make an A/B possible:
+        # holding the harness, the prompts, the tools and the queue fixed while
+        # swapping only the brain is the only way to tell "the model is too
+        # small" apart from "the work was badly specified", and those two
+        # diagnoses lead to completely different projects.
+        self.api_key = str(o.get("api_key") or "").strip()
         self.schema = o.get("schema")
         # A grammar describes ONE expected shape, so it must not be applied to
         # every prompt this backend serves. The harness reuses one planner for
@@ -89,10 +96,13 @@ class LocalServer:
                                 "schema": self.schema["schema"], "strict": True},
             }
         try:
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
             req = urllib.request.Request(
                 self.base + "/v1/chat/completions",
                 data=json.dumps(body).encode(),
-                headers={"Content-Type": "application/json"})
+                headers=headers)
             with urllib.request.urlopen(req, timeout=self.timeout_s) as r:
                 d = json.loads(r.read())
         except Exception as e:  # noqa: BLE001
