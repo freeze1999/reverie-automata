@@ -75,7 +75,8 @@ class Store:
 
     # Additive migrations only. A database that predates a column must gain it
     # silently rather than crash a scheduled cycle at three in the morning.
-    _MIGRATIONS = (("threads", "last_attempt_at", "REAL"),)
+    _MIGRATIONS = (("threads", "last_attempt_at", "REAL"),
+                   ("threads", "attempts", "INTEGER DEFAULT 0"))
 
     def _migrate(self, con) -> None:
         for table, column, decl in self._MIGRATIONS:
@@ -143,6 +144,23 @@ class Store:
             f"SELECT id, kind, title FROM threads WHERE status='open' "
             f"AND (last_attempt_at IS NULL OR last_attempt_at <= ?) "
             f"ORDER BY {THREAD_PRIORITY}, id LIMIT ?", (cutoff, limit)).fetchall()
+
+    def attempts(self, con, title: str) -> int:
+        """How many times this exact work has already been tried and failed.
+
+        Counted from the follow-up threads the engine files for its own
+        failures, which are deduplicated by title, so the count lives in one
+        row rather than in a pile of copies.
+        """
+        row = con.execute("SELECT attempts FROM threads WHERE title=? "
+                          "ORDER BY id DESC LIMIT 1", (title,)).fetchone()
+        return int(row[0] or 0) if row else 0
+
+    def bump_attempt(self, con, title: str) -> int:
+        con.execute("UPDATE threads SET attempts=COALESCE(attempts,0)+1 WHERE title=?",
+                    (title,))
+        con.commit()
+        return self.attempts(con, title)
 
     def mark_thread_attempted(self, con, thread_id, now: float | None = None) -> None:
         """Record that a cycle actually worked this thread, so the cooldown

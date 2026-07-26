@@ -83,3 +83,24 @@ def test_a_citation_or_example_number_counts_as_the_thing_to_match():
     for what in ("write code for Example 5", "implement the map in arXiv:1503.08733",
                  "write a script for 2407.07911"):
         assert route({"what": what})[0] == DELEGATE, what
+
+
+def test_reading_a_file_is_not_authoring():
+    """Cost two nonsense jobs to a person. The word "program" names the research
+    programme here and appears in every path, so every task hit the authoring
+    half; a rationale containing "provided" then completed the match, and a
+    request to read a local log went out as a request to write a script. A word
+    present in most tasks cannot discriminate between them."""
+    t = {"what": "Read the file program/LOG.md and extract all listed "
+                 "established facts and already ruled-out branches",
+         "why": "the oldest unfinished thread, advancing Program A by one "
+                "verifiable step, a concrete receipt provided by the log",
+         "mode": "tool"}
+    assert route(t)[0] == LOCAL, route(t)[1]
+
+
+def test_the_authoring_verbs_still_fire():
+    for what in ("write a script for the matrix given above",
+                 "implement exactly what the paper supplied",
+                 "patch the delivered code to match the published example"):
+        assert route({"what": what})[0] == DELEGATE, what

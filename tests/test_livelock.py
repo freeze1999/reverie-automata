@@ -96,3 +96,33 @@ def test_the_forced_task_is_still_risk_classified(tmp_path):
     r.tick()
     out = _outcome(r)
     assert out["ledger"][0]["status"] == "parked"
+
+
+def test_a_task_that_keeps_failing_becomes_a_recorded_dead_end(tmp_path):
+    """A retry is a bet that something has changed. Nothing has, when the same
+    task fails the same way, and this engine took that bet twenty-three times
+    in two hours: each failure filed the follow-up that produced the next
+    attempt. Past the limit the work becomes a dead end on the record, which is
+    not giving up: a ruled-out branch written down is the only thing that stops
+    the same two hours happening again tomorrow."""
+    class Failing(Refuser):
+        def run_session(self, directive, **kw):
+            return "<<RESULT>>failed<<END>>\n<<VERIFY>>the same call, again<<END>>"
+
+        def complete(self, system, user, *, max_tokens=1000):
+            return "<<PLAN>>" + json.dumps(
+                {"tasks": [{"id": "t1", "what": "read the log and extract facts",
+                            "mode": "tool", "risk": "SAFE"}],
+                 "do_nothing": False}) + "<<END>>"
+
+    r = _runner(tmp_path)            # _runner re-registers Refuser, so swap after
+    r.engine.planner = r.engine.agent = Failing()
+    for _ in range(4):
+        r.tick()
+
+    con = r.store.connect()
+    open_titles = [t for (t,) in con.execute(
+        "SELECT title FROM threads WHERE status='open'")]
+    con.close()
+    assert not any(t.startswith("resume failed task:") for t in open_titles), open_titles
+    assert any(t.startswith("dead end:") for t in open_titles), open_titles

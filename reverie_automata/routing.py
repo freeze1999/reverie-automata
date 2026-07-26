@@ -33,8 +33,15 @@ DELEGATE = "delegate"
 # Deliberately multilingual, because the first version of the sibling rule in
 # planvalidate matched English verbs only and a task written in Chinese walked
 # straight past it.
+# Verbs and their objects, not ambient nouns. "program" was here and it was a
+# mistake that cost two nonsense jobs to a person: in this deployment the word
+# names the research programme and appears in every file path, so every task
+# hit the authoring half, and any task whose rationale happened to contain
+# "provided" was then routed out. A word that appears in most tasks cannot
+# discriminate between them, whatever it means elsewhere.
 AUTHOR = (r"\bwrite\b|\bimplement\b|\brewrite\b|\bport\b|"
-          r"\brefactor\b|\bscript\b|\bcode\b|\bprogram\b|\bpatch\b|\bfix\b|"
+          r"\brefactor\b|\bscript\b|\bpatch\b|"
+          r"\bwrite\s+code\b|\bfix\s+the\b|"
           r"写|实现|编写|重构|脚本|代码|修复")
 
 # Faithfulness: the artifact must agree with something already given.

@@ -401,8 +401,34 @@ class Engine:
                     (status, time.time(), verify[:2000], ts, tid))
         con.commit()
         if status == "failed":
-            self.store.add_thread(con, f"resume failed task: {what[:100]}", verify[:400],
-                                  created_cycle=ts, defer=True, unique=True)
+            # A retry is a bet that something has changed. Nothing has, when
+            # the same task fails the same way, and this engine will happily
+            # take that bet forever: watched live, one unfinishable task was
+            # re-planned twenty-three times in two hours, each failure filing
+            # the follow-up that produced the next attempt.
+            #
+            # So attempts are counted, and past the limit the work stops being
+            # work and becomes a recorded dead end. That is not giving up: a
+            # ruled-out branch written down is worth more than a fresh idea,
+            # because only one of the two prevents the same two hours happening
+            # again tomorrow.
+            title = f"resume failed task: {what[:100]}"
+            limit = int(self.cfg.get("max_task_attempts", 3))
+            tried = self.store.attempts(con, title)
+            if tried + 1 >= limit:
+                self.store.add_thread(
+                    con, f"dead end: {what[:100]}",
+                    f"abandoned after {tried + 1} attempts. Last failure: {verify[:400]}",
+                    kind="deadend", created_cycle=ts, defer=True, unique=True)
+                for row in con.execute("SELECT id FROM threads WHERE title=? AND status='open'",
+                                       (title,)).fetchall():
+                    self.store.close_thread(con, row[0], f"abandoned after {tried + 1} attempts")
+                events.emit(self.home, "abandoned", cycle=ts, task=tid,
+                            attempts=tried + 1, what=what[:200], last=verify[:300])
+            else:
+                self.store.add_thread(con, title, verify[:400],
+                                      created_cycle=ts, defer=True, unique=True)
+                self.store.bump_attempt(con, title)
         events.emit(self.home, "task", cycle=ts, task=tid, status=status,
                     mode=task.get("mode"), what=what[:200], verify=verify[:400],
                     steps=raw.count("\n[") or None)
