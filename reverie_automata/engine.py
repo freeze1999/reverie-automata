@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import blast
 from . import events
+from . import mandate
 from . import prompts as P
 from .inbox import Inbox
 from .planvalidate import validate_plan
@@ -80,6 +81,21 @@ class Engine:
         self.memory_path = self.home / "MEMORY.md"
         self.inbox = Inbox(self.home / "inbox", cfg)
 
+    def _standing(self) -> str:
+        """The active standing orders, in full, for the planning context.
+
+        Text, not authority: identical in standing to an inbox drop. It says
+        what the post is for; it cannot widen the toolkit or unlock a path.
+        """
+        try:
+            ms = [m for m in mandate.load(self.home / str(self.cfg.get("mandates_dir", "mandates")))
+                  if m.active]
+        except Exception:  # noqa: BLE001
+            return ""
+        if not ms:
+            return ""
+        return "\n\n".join(f"[{m.id}] {m.objective}\n{m.body}"[:4000] for m in ms)
+
     # -- risk (defense in depth: wrapper classifies too, and wins) ----------
     def _wrapper_risk(self, task: dict) -> tuple[str, str]:
         blob = json.dumps(task, ensure_ascii=False)
@@ -114,7 +130,8 @@ class Engine:
         # Reading the inbox is pure; the drops are archived only once a plan
         # exists, so a failed inference leaves them for the next cycle.
         inbox_section, inbox_files = self.inbox.read()
-        context, _ = self.harvest.build(con, {"inbox": inbox_section})
+        context, _ = self.harvest.build(con, {"inbox": inbox_section,
+                                              "mandates": self._standing()})
         p1 = self.planner.complete("", P.PLAN.format(context=context),
                                    max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
         (cdir / "plan.txt").write_text(p1, encoding="utf-8")

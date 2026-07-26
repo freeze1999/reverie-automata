@@ -54,6 +54,14 @@ class Harvester:
         # declined by judgment, never silently shrunk by the trimmer.
         if ctx.get("inbox"):
             blocks.insert(1, (0, "inbox (one-shot drops for THIS cycle)", ctx["inbox"]))
+        # A standing order is present EVERY cycle, in full. As a thread title
+        # in a list it is a line the planner skims past: watched live, a cycle
+        # with a standing order open still claimed it had "no active work
+        # queue". The objective has to be in the context as text, not as a
+        # reference to text, for the same reason "a note exists" made an agent
+        # ask permission where the note's contents made it act.
+        if ctx.get("mandates"):
+            blocks.insert(1, (0, "standing orders (in force every cycle)", ctx["mandates"]))
         for s in self.sources:
             try:
                 text = s.collect(ctx)
