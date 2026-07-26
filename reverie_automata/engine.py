@@ -164,7 +164,15 @@ class Engine:
         inbox_section, inbox_files = self.inbox.read()
         context, _ = self.harvest.build(con, {"inbox": inbox_section,
                                               "mandates": self._standing()})
-        p1 = self.planner.complete("", P.PLAN.format(context=context),
+        # Which opening the planner gets is a fact about the post, not a
+        # preference: an engine woken because work is due must not be told that
+        # nobody is asking anything of it.
+        if str(self.cfg.get("trigger", "idle")).lower() in ("work", "both"):
+            prompt = P.PLAN_STANDING.format(context=context,
+                                            constraints=P.constraints(self.cfg))
+        else:
+            prompt = P.PLAN.format(context=context)
+        p1 = self.planner.complete("", prompt,
                                    max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
         (cdir / "plan.txt").write_text(p1, encoding="utf-8")
         plan = parse_plan(p1) or {"do_nothing": True, "do_nothing_reason": "unparseable plan", "tasks": []}
@@ -355,7 +363,8 @@ class Engine:
         if task.get("mode") == "text":
             raw = self.planner.complete("", P.EXECUTE_TEXT_ONLY.format(context="", what=what), max_tokens=1200)
         else:
-            raw = self.agent.run_session(P.EXECUTE.format(context="", task_id=tid, what=what, why=task.get("why", "")),
+            raw = self.agent.run_session(P.EXECUTE.format(context="", task_id=tid, what=what, why=task.get("why", ""),
+                                                          turn_cap=self.cfg["max_tool_turns"]["execute"]),
                                          cwd=str(self.home), env=self._cycle_env(ts),
                                          turn_cap=self.cfg["max_tool_turns"]["execute"])
         (cdir / f"task_{tid}.txt").write_text(raw, encoding="utf-8")
