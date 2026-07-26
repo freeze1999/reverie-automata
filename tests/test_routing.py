@@ -40,6 +40,16 @@ def test_the_rule_is_not_english_only():
     assert where == DELEGATE
 
 
+def test_reproduction_delegates_on_its_own():
+    """Found on the first live cycle after routing shipped. "Reproduce the
+    published claims for the 4x4 Druzkowski matrix" carried no other fidelity
+    marker, stayed local, and spent ten turns against the exact wall routing
+    exists to avoid. There is no such thing as reproducing something loosely."""
+    where, why = route({"what": "Resume task #7: Reproduce the published claims "
+                                "for the 4x4 Druzkowski matrix over Z[i]"})
+    assert where == DELEGATE and "eproduc" in why
+
+
 def test_an_operator_can_pin_a_task_local():
     task = {"what": "write a script for the matrix given above (local only)"}
     where, why = route(task)

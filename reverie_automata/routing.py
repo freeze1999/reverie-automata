@@ -33,15 +33,23 @@ DELEGATE = "delegate"
 # Deliberately multilingual, because the first version of the sibling rule in
 # planvalidate matched English verbs only and a task written in Chinese walked
 # straight past it.
-AUTHOR = (r"\bwrite\b|\bimplement\b|\breproduce\b|\brewrite\b|\bport\b|"
+AUTHOR = (r"\bwrite\b|\bimplement\b|\brewrite\b|\bport\b|"
           r"\brefactor\b|\bscript\b|\bcode\b|\bprogram\b|\bpatch\b|\bfix\b|"
-          r"写|实现|复现|编写|重构|脚本|代码|修复")
+          r"写|实现|编写|重构|脚本|代码|修复")
 
 # Faithfulness: the artifact must agree with something already given.
-FIDELITY = (r"\bgiven\b|\bsupplied\b|\bprovided\b|\babove\b|\bthis matrix\b|"
-            r"\bthe matrix\b|\bexactly\b|\bverbatim\b|\bfrom the (paper|drop|"
-            r"citation|source)\b|\bas (stated|written|specified)\b|"
-            r"给定|提供|上述|按照|原样|忠于")
+FIDELITY = (r"\bgiven\b|\bsupplied\b|\bprovided\b|\babove\b|\bpublished\b|"
+            r"\bthis matrix\b|\bthe matrix\b|\bexactly\b|\bverbatim\b|"
+            r"\bfrom the (paper|drop|citation|source)\b|"
+            r"\bas (stated|written|specified)\b|"
+            r"给定|提供|上述|已发表|按照|原样|忠于")
+
+# Reproduction is fidelity by definition: there is no such thing as
+# reproducing something loosely. Found by running, on the first live cycle
+# after routing shipped: "reproduce the published claims for the 4x4
+# Druzkowski matrix" carried no other fidelity marker, stayed local, and spent
+# ten turns hitting the wall the routing exists to avoid.
+REPRODUCE = r"\breproduc\w*|\breplicat\w*|复现|重现"
 
 DEFAULTS = {
     # Both halves must fire. "write a note about what we learned" is authoring
@@ -50,7 +58,7 @@ DEFAULTS = {
     # is the thing the small brain is actually good at.
     "delegate_when_all": [AUTHOR, FIDELITY],
     # Any single hit here delegates on its own.
-    "delegate_when_any": [],
+    "delegate_when_any": [REPRODUCE],
     # Any hit here pins the task local no matter what else matched. An escape
     # for the operator, and the reason a bad pattern is a nuisance rather than
     # a wall.
