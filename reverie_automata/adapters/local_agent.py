@@ -26,9 +26,39 @@ the tools and judges them is not a boundary.
 from __future__ import annotations
 
 import json
+import os
+import time
+from pathlib import Path
 from typing import Any, Callable
 
 from .local_server import LocalServer
+
+
+def _live(kind: str, **fields) -> None:
+    """Emit one line about a step WHILE it happens.
+
+    The transcript is assembled and returned when the session ends, which is
+    right for the record and useless for watching: a cycle on a small local
+    brain takes minutes, and for those minutes an observer sees nothing at all
+    and cannot tell thinking from hung. So each step is appended as it occurs,
+    to a file named by the environment the engine already stamps.
+
+    Failure here is silence, never an exception. Watching the work must never
+    be able to break the work.
+    """
+    try:
+        home, cycle = os.environ.get("REVERIE_HOME"), os.environ.get("REVERIE_CYCLE")
+        if not home or not cycle:
+            return
+        p = Path(home) / "cycles" / cycle / "live.jsonl"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"at": time.time(), "kind": kind}
+        rec.update(fields)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+            f.flush()
+    except Exception:
+        pass
 
 
 def _step_schema(tool_names: list[str]) -> dict[str, Any]:
@@ -113,6 +143,7 @@ class LocalAgent:
                   "and try a different approach rather than asserting the result."
             )
             self.server.schema = schema
+            _live("thinking", turn=turn + 1, cap=cap)
             raw = self.server.complete("", prompt, max_tokens=self.step_tokens)
             step = self._parse(raw)
             if step is None:
@@ -123,6 +154,7 @@ class LocalAgent:
                 # ten times the wait for the same nothing, so unusable replies
                 # in a row end the session with the reason visible.
                 dud += 1
+                _live("dud", turn=turn + 1, raw=raw[:200])
                 if dud >= 3:
                     outcome = "failed"
                     evidence = (f"the model returned nothing usable {dud} times "
@@ -133,6 +165,8 @@ class LocalAgent:
             dud = 0
 
             tool, arg = step.get("tool", ""), str(step.get("argument", ""))
+            _live("step", turn=turn + 1, thought=str(step.get("thought", ""))[:200],
+                  tool=tool, arg=arg[:200])
             if tool == "done":
                 outcome, evidence = "done", arg or "finished without saying what was established"
                 self.transcript.append(f"[{turn + 1}] done: {arg[:200]}")
@@ -143,6 +177,7 @@ class LocalAgent:
                 break
 
             result = self._run_tool(tool, arg)
+            _live("result", turn=turn + 1, tool=tool, result=result[:400])
             self.transcript.append(
                 f"[{turn + 1}] {tool}({arg[:120]}) -> {result[:self.max_result_chars]}")
 
@@ -165,6 +200,7 @@ class LocalAgent:
             outcome = "failed"
             evidence = f"turn cap reached ({cap}) with no conclusion"
 
+        _live("verdict", outcome=outcome, evidence=evidence[:300])
         # The engine reads these; the transcript is the receipt behind them.
         log = "\n".join(self.transcript)
         return (f"<<RESULT>>{outcome}<<END>>\n"

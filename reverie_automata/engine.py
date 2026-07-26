@@ -172,6 +172,8 @@ class Engine:
                                             constraints=P.constraints(self.cfg))
         else:
             prompt = P.PLAN.format(context=context)
+        import os
+        os.environ["REVERIE_CYCLE"], os.environ["REVERIE_HOME"] = ts, str(self.home)
         p1 = self.planner.complete("", prompt,
                                    max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
         (cdir / "plan.txt").write_text(p1, encoding="utf-8")
@@ -338,9 +340,20 @@ class Engine:
                                       defer=True, unique=True)
                 return {"id": tid, "status": "delegated", "what": what,
                         "verify": f"job {job_id} filed: {why}"}
-            # A delegate that could not file is a delegate that is down. Doing
-            # the work badly here beats not doing it at all, and the event
-            # above records that the handoff was intended and missed.
+            # Two different failures wear the same empty job id, and treating
+            # them alike is wrong in one direction or the other. A delegate
+            # that is DOWN (unconfigured, unreachable) should not stop the
+            # engine: doing the work badly here beats not doing it at all. A
+            # delegate that is merely BUSY should not make the engine attempt
+            # the exact thing it delegated the task to avoid; the work waits,
+            # because the reason it was routed out has not changed.
+            if str(note).startswith("defer:") or "concurrency cap" in str(note):
+                self.store.add_thread(con, f"waiting on a free worker: {what[:80]}",
+                                      json.dumps(task, ensure_ascii=False),
+                                      kind="delegated", created_cycle=ts,
+                                      defer=True, unique=True)
+                return {"id": tid, "status": "deferred", "what": what,
+                        "verify": f"not attempted locally: {note}"}
             print(f"[route] delegation unavailable ({note}); running locally")
         elif where == DELEGATE:
             events.emit(self.home, "route", cycle=ts, task=tid, where="local",
@@ -392,7 +405,9 @@ class Engine:
 
     def _cycle_env(self, ts):
         import os
-        return dict(os.environ, REVERIE_CYCLE=ts)  # marks a session so a pre-tool hook can gate it
+        # CYCLE marks a session so a pre-tool hook can gate it; HOME lets a
+        # tool loop write its steps where an observer is already looking.
+        return dict(os.environ, REVERIE_CYCLE=ts, REVERIE_HOME=str(self.home))
 
     def _append_memory(self, lessons):
         if not lessons:
