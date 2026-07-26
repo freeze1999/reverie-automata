@@ -100,3 +100,15 @@ def test_a_brain_that_answers_nothing_ends_the_session():
     out = a.run_session("go")
     assert "nothing usable 3 times" in out
     assert len(a.transcript) <= 4
+
+
+def test_the_loop_hands_its_server_the_whole_configuration():
+    """The credential and the constraint mode were missing here while the
+    planner had both, so in one cycle the plan phase reached a hosted brain and
+    the execute phase got 401 from the same endpoint."""
+    from reverie_automata.adapters.local_agent import LocalAgent
+    a = LocalAgent({"base_url": "https://api.example.com", "api_key": "k",
+                    "schema_mode": "json_object", "model": "m"})
+    assert a.server.api_key == "k"
+    assert a.server.schema_mode == "json_object"
+    assert a.server.model == "m"

@@ -103,9 +103,17 @@ class LocalAgent:
         # small a budget truncates the json mid-string, which parses as no
         # step at all and looks exactly like a model that refused to answer.
         self.step_tokens = int(o.get("step_tokens", 1600))
+        # Everything the server needs travels with it. The credential and the
+        # constraint mode were missing here while the planner had both, so the
+        # plan phase reached a hosted brain and the execute phase got 401 from
+        # the same endpoint in the same cycle. A loop that builds its own
+        # dependency has to be handed the whole configuration, not the part
+        # somebody remembered.
         self.server = LocalServer({
             "base_url": o.get("base_url", "http://127.0.0.1:8080"),
             "model": o.get("model", "local"),
+            "api_key": o.get("api_key", ""),
+            "schema_mode": o.get("schema_mode", "json_schema"),
             "thinking": bool(o.get("thinking", False)),
             "temperature": float(o.get("temperature", 0.4)),
             "timeout_s": int(o.get("timeout_s", 600)),
