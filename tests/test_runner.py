@@ -7,7 +7,8 @@ def test_claim_lock_is_atomic_and_exclusive(tmp_path):
     loses, with no exists()-then-write window where both could pass."""
     lock = tmp_path / "fire.lock"
     assert claim_lock(lock) is True
-    assert lock.read_text().strip().isdigit()   # PID stamped for reap_lock
+    pid, host = lock.read_text().split()        # pid AND host, for reap_lock
+    assert pid.isdigit() and host
     assert claim_lock(lock) is False            # held -> loser backs off
     lock.unlink()
     assert claim_lock(lock) is True             # released -> claimable again

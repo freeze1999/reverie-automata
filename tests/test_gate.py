@@ -69,3 +69,26 @@ def test_pid_aware_reap(tmp_path):
     past = time.time() - (c["phase_timeout_minutes"] + 20) * 60
     os.utime(old, (past, past))
     assert G.reap_lock(old, c)
+
+
+def test_a_lock_from_another_machine_is_reaped_at_once(tmp_path):
+    """Found moving a live instance between two boxes: the lock file came along
+    in the copy, named a pid that happened to be alive on the new host, and the
+    engine reported "another cycle holds the lock" about a cycle that had never
+    existed there. Silent, and it would have lasted until the age backstop."""
+    import os
+    from reverie_automata.config import Config
+    lock = tmp_path / ".fire.lock"
+    lock.write_text(f"{os.getpid()} some-other-machine")   # our pid, their host
+    assert G.reap_lock(lock, Config()) is True
+    assert not lock.exists()
+
+
+def test_our_own_live_lock_is_left_alone(tmp_path):
+    import os
+    import socket
+    from reverie_automata.config import Config
+    lock = tmp_path / ".fire.lock"
+    lock.write_text(f"{os.getpid()} {socket.gethostname()}")
+    assert G.reap_lock(lock, Config()) is False
+    assert lock.exists()

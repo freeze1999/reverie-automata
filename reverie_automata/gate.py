@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -120,8 +121,18 @@ def reap_lock(lock: Path, cfg, now_ts: float | None = None) -> bool:
         raw = lock.read_text().strip()
     except Exception:
         pass
-    pid = int(raw) if raw.isdigit() else None
-    dead = pid is not None and not _pid_alive(pid)
+    # A lock names the process AND the machine. Without the machine, a lock
+    # file that travels with a copied instance can silently stop the new one:
+    # the pid it names may well be alive on the new host, belonging to some
+    # unrelated process, and the engine then refuses to fire until the age
+    # backstop expires hours later. Found while moving a live instance between
+    # two boxes, where "another cycle holds the lock" was true of a cycle that
+    # had never existed here.
+    parts = raw.split()
+    pid = int(parts[0]) if parts and parts[0].isdigit() else None
+    host = parts[1] if len(parts) > 1 else ""
+    foreign = bool(host) and host != socket.gethostname()
+    dead = foreign or (pid is not None and not _pid_alive(pid))
     one_phase = cfg["phase_timeout_minutes"] + 15
     hard = cfg["phase_timeout_minutes"] * 12
     if dead or (pid is None and age_min > one_phase) or age_min > hard:

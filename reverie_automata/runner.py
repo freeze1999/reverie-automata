@@ -8,6 +8,7 @@ overlap and self-heals if an owner dies.
 from __future__ import annotations
 
 import os
+import socket
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -38,7 +39,9 @@ def claim_lock(lock: Path) -> bool:
     except FileExistsError:
         return False
     with os.fdopen(fd, "w") as f:
-        f.write(str(os.getpid()))
+        # pid AND host: a lock that travels with a copied instance must not be
+        # mistaken for a live cycle on the machine it landed on.
+        f.write(f"{os.getpid()} {socket.gethostname()}")
     return True
 
 
