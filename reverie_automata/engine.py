@@ -96,6 +96,38 @@ class Engine:
             return ""
         return "\n\n".join(f"[{m.id}] {m.objective}\n{m.body}"[:4000] for m in ms)
 
+    def _consecutive_no_ops(self, con) -> int:
+        """How many cycles in a row ended in do_nothing, most recent first."""
+        n = 0
+        for (status,) in con.execute(
+                "SELECT status FROM cycles WHERE finished_at IS NOT NULL "
+                "ORDER BY started_at DESC LIMIT 10"):
+            if status != "do_nothing":
+                break
+            n += 1
+        return n
+
+    def _task_from_due_thread(self, con) -> dict | None:
+        """The top due thread, as a task, unedited.
+
+        Deliberately dumb. The wrapper is not trying to plan better than the
+        model; it is refusing to let "nothing to do" stand when something is
+        demonstrably due, and the thread's own title is the most honest
+        statement of that something available without asking anyone.
+        """
+        rows = self.store.due_threads(
+            con, cooldown_minutes=float(self.cfg.get("thread_cooldown_minutes", 0) or 0),
+            limit=1)
+        if not rows:
+            return None
+        tid, kind, title = rows[0][0], rows[0][1], rows[0][2]
+        body = con.execute("SELECT body FROM threads WHERE id=?", (tid,)).fetchone()
+        return {"id": "t1", "what": title, "thread": tid, "mode": "tool",
+                "risk": "SAFE",
+                "why": (f"filed by the wrapper: this {kind} thread is due and the "
+                        f"planner declined twice in a row. "
+                        + (str(body[0])[:400] if body and body[0] else ""))}
+
     # -- risk (defense in depth: wrapper classifies too, and wins) ----------
     def _wrapper_risk(self, task: dict) -> tuple[str, str]:
         blob = json.dumps(task, ensure_ascii=False)
@@ -146,6 +178,29 @@ class Engine:
             plan, work_available=work_available,
             max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)),
             allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)))
+        # A guard that only objects is not a floor. Watched live: with a
+        # standing order open and due, the planner declared the program "at a
+        # stalemate with no actionable path forward", the false-no-op check
+        # caught it, nothing changed, and the next cycle declared the same
+        # thing. The work stayed due, so the engine kept firing and kept
+        # refusing, which is a livelock at heartbeat speed dressed as an honest
+        # lazy day.
+        #
+        # So after a second consecutive refusal the wrapper stops asking. It
+        # takes the top due thread and files it as the task, verbatim. This is
+        # not the engine overruling judgment about WHETHER to work, which was
+        # never the model's to make (the gate decides that); it is the engine
+        # declining to accept "there is nothing to do" from a party that has
+        # already been shown there is.
+        if false_no_op and self._consecutive_no_ops(con) >= 1:
+            forced = self._task_from_due_thread(con)
+            if forced:
+                plan["tasks"] = [forced]
+                plan["do_nothing"] = False
+                false_no_op = False
+                plan_complaints.append(
+                    "second refusal in a row with work due: the top due thread "
+                    "was filed as the task by the wrapper")
         for c in plan_complaints:
             print(f"[plan] {c}")
         # The reasoning, not the log line: what it saw as due, what it decided
