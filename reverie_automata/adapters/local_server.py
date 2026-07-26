@@ -27,9 +27,32 @@ configured number is a request; `/props` is the truth.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import urllib.request
 from typing import Any
 
+
+
+def _usage(u: dict, model: str) -> None:
+    """Append one line of token accounting. Silent on failure: metering must
+    never be able to break the thing it meters."""
+    if not u:
+        return
+    try:
+        import os
+        import time
+        home = os.environ.get("REVERIE_HOME")
+        if not home:
+            return
+        rec = {"at": time.time(), "model": model,
+               "in": u.get("prompt_tokens"), "out": u.get("completion_tokens"),
+               "reasoning": (u.get("completion_tokens_details") or {}).get("reasoning_tokens"),
+               "cached": (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
+               "cycle": os.environ.get("REVERIE_CYCLE")}
+        with open(Path(home) / "usage.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass
 
 class LocalServer:
     """OpenAI-shaped local endpoint. Planner-side only: it completes prompts,
@@ -128,6 +151,13 @@ class LocalServer:
                 d = json.loads(r.read())
         except Exception as e:  # noqa: BLE001
             return f"[local server error: {e}]"
+
+        # What the call actually cost, recorded where a person can add it up.
+        # Measure before choosing: the expensive part of an agent loop is the
+        # transcript resent on every turn, and on a reasoning model the hidden
+        # deliberation tokens on top of that, and neither is visible until
+        # somebody writes the numbers down.
+        _usage(d.get("usage") or {}, self.model)
 
         choice = (d.get("choices") or [{}])[0]
         msg = choice.get("message") or {}
