@@ -232,6 +232,13 @@ class Engine:
         p3 = self.agent.run_session(P.LEARN.format(context=context, ledger=ledger_txt),
                                     cwd=str(self.home), env=self._cycle_env(ts),
                                     turn_cap=self.cfg["max_tool_turns"]["learn"])
+        # The LEARN phase holds real tools and its transcript was the one thing
+        # a cycle never wrote down. That gap was found the hard way: a file
+        # appeared in the working tree during a cycle, and the only phase whose
+        # tool calls were not on disk was this one, so the question of what
+        # created it could not be answered from the record at all. Every phase
+        # that can touch the world leaves its transcript.
+        (cdir / "learn.txt").write_text(p3, encoding="utf-8")
         journal = _grab("JOURNAL", p3) or p3[:1200]
         review = _grab("REVIEW", p3)
         lessons = [Lesson(*[x.strip() for x in re.split(r"->", l, maxsplit=2)])
