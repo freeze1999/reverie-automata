@@ -1,4 +1,5 @@
 """The tool loop, driven by a scripted brain rather than a real one."""
+import json
 import sys
 from pathlib import Path
 
@@ -112,3 +113,31 @@ def test_the_loop_hands_its_server_the_whole_configuration():
     assert a.server.api_key == "k"
     assert a.server.schema_mode == "json_object"
     assert a.server.model == "m"
+
+
+def test_the_harness_perturbs_on_the_second_identical_call():
+    """A15. Given a syntax error with a caret under the offending character,
+    the model submitted the identical code twice more. Watching a wall being
+    hit is not supervision, so the harness changes something on the second
+    repeat rather than waiting for the third."""
+    from reverie_automata.adapters.local_agent import LocalAgent
+
+    seen = []
+
+    class Server:
+        schema = None
+
+        def complete(self, system, user, *, max_tokens=1000):
+            seen.append(user)
+            return json.dumps({"thought": "t", "tool": "calc",
+                               "argument": "A**2.rank()"})
+
+    a = LocalAgent({"tools": {"calc": ("run it", lambda x: "SyntaxError: invalid decimal literal")},
+                    "max_turns": 4})
+    a.server = Server()
+    out = a.run_session("do it")
+
+    # The third prompt must carry the harness's instruction, not a fourth
+    # copy of the same unhelpful error.
+    assert any("[harness] you have now made this exact call twice" in p for p in seen), seen[-1][-300:]
+    assert "the same call was made" in out

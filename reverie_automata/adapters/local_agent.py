@@ -186,6 +186,33 @@ class LocalAgent:
 
             result = self._run_tool(tool, arg)
             _live("result", turn=turn + 1, tool=tool, result=result[:400])
+
+            signature = (tool, arg)
+            repeats[signature] = repeats.get(signature, 0) + 1
+
+            # Watching a wall being hit is not supervision. Measured: given
+            # `rank_A_squared = A**2.rank()`, the interpreter answered with the
+            # file, the line, a caret under the exact character and the words
+            # "invalid decimal literal", and the model submitted the identical
+            # code twice more. It does not update on evidence, not across
+            # cycles, not within a session, not when the evidence is a compiler
+            # pointing at the character.
+            #
+            # So on the SECOND identical call the loop stops asking politely
+            # and changes something itself. The perturbation must happen BEFORE
+            # the transcript append, because the transcript is what the next
+            # prompt is built from; an instruction written after it is an
+            # instruction the model never sees, which is the same mistake as
+            # detecting a livelock and doing nothing about it.
+            if repeats[signature] == 2:
+                result = (
+                    f"[harness] you have now made this exact call twice: "
+                    f"{tool}({arg[:120]}). An identical call cannot return "
+                    f"anything new. Do not make it a third time. Either change "
+                    f"the argument, use a different tool, or call give_up with "
+                    f"what blocked you. The last result was: {result[:600]}")
+                _live("perturbed", turn=turn + 1, tool=tool)
+
             self.transcript.append(
                 f"[{turn + 1}] {tool}({arg[:120]}) -> {result[:self.max_result_chars]}")
 
@@ -195,8 +222,6 @@ class LocalAgent:
             # returning "no results" is a successful call and the same dead
             # end, and an identical call with an identical argument cannot
             # produce new information whatever it returns.
-            signature = (tool, arg)
-            repeats[signature] = repeats.get(signature, 0) + 1
             if repeats[signature] >= 3:
                 outcome = "failed"
                 evidence = (f"the same call was made {repeats[signature]} times "
