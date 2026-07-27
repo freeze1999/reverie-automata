@@ -106,3 +106,68 @@ def test_an_empty_menu_admits_nothing():
     from reverie_automata.tasktypes import EMPTY
     ok, _ = EMPTY.validate({"type": "anything", "what": "please"})
     assert not ok
+
+
+# ---- the menu, as the validator actually applies it -------------------------
+
+from reverie_automata.planvalidate import validate_plan  # noqa: E402
+
+GOOD = {"id": "t1", "type": "resolve_citation", "arxiv_id": "1503.08733",
+        "claimed_title": "Some approaches toward the Jacobian conjecture",
+        "why": "M1 needs a third source", "risk": "SAFE"}
+
+
+def _v(tasks, **kw):
+    kw.setdefault("work_available", True)
+    kw.setdefault("max_tasks", 3)
+    kw.setdefault("menu", MENU)
+    return validate_plan({"tasks": tasks, "do_nothing": False}, **kw)
+
+
+def test_an_admissible_task_survives_validation():
+    plan, complaints, _ = _v([dict(GOOD)])
+    assert len(plan["tasks"]) == 1 and complaints == []
+
+
+def test_an_inadmissible_task_is_refused_by_the_validator():
+    """A4 at the seam that matters: not merely unrepresentable in the type
+    system, but actually dropped by the code the engine calls."""
+    plan, complaints, _ = _v([{"id": "t1", "type": "read_and_understand",
+                               "target": "LOG.md", "why": "x", "risk": "SAFE"}])
+    assert plan["tasks"] == []
+    assert any("refused" in c for c in complaints)
+
+
+def test_two_paraphrases_in_one_plan_collapse_to_one():
+    """A1, at the plan level: 125 wordings must not become 125 work items."""
+    a = dict(GOOD)
+    b = dict(GOOD, id="t2", claimed_title="  SOME APPROACHES TOWARD THE JACOBIAN CONJECTURE ")
+    plan, complaints, _ = _v([a, b])
+    assert len(plan["tasks"]) == 1
+    assert any("same work" in c for c in complaints)
+
+
+def test_a_recorded_dead_end_blocks_the_work_that_was_ruled_out():
+    """A5: it diagnosed its own loop correctly and continued. A dead end has to
+    have mechanical force, not prose force."""
+    plan, complaints, _ = _v([dict(GOOD)], ruled_out={MENU.key(GOOD)})
+    assert plan["tasks"] == []
+    assert any("already ruled out" in c for c in complaints)
+
+
+def test_the_stub_artifact_is_refused_at_the_seam_too():
+    """A14, end to end: the nineteen-byte file never gets a task to be written
+    by, because the task is missing five required fields."""
+    plan, complaints, _ = _v([{"id": "t1", "type": "write_artifact",
+                               "author": "local", "why": "x", "risk": "SAFE"}])
+    assert plan["tasks"] == []
+    assert any("missing required field" in c for c in complaints)
+
+
+def test_without_a_menu_the_old_prose_path_still_runs():
+    """Reverie ships for idle companions too, and they have no program menu.
+    The typed path must be an addition, not a breaking change."""
+    plan, _, _ = validate_plan(
+        {"tasks": [{"id": "t1", "what": "sweep the vault", "mode": "tool"}],
+         "do_nothing": False}, work_available=True, max_tasks=1)
+    assert len(plan["tasks"]) == 1

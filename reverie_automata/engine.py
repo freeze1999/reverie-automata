@@ -24,6 +24,7 @@ from . import blast
 from . import events
 from . import mandate
 from . import prompts as P
+from . import referee as R
 from .inbox import Inbox
 from .planvalidate import validate_plan
 from .routing import DELEGATE, route
@@ -77,6 +78,11 @@ class Engine:
         self.cfg, self.store, self.harvest = cfg, store, harvester
         self.inspector, self.agent, self.planner, self.approvals = inspector, agent, planner, approvals
         self.delegate = delegate
+        # The program supplies both: what counts as work, and what counts as
+        # progress. An engine with neither still runs the prose path, because
+        # reverie also ships for idle companions who have no program.
+        self.menu = cfg.get("menu")
+        self.referee = cfg.get("referee")
         self.home = cfg.home
         self.memory_path = self.home / "MEMORY.md"
         self.inbox = Inbox(self.home / "inbox", cfg)
@@ -95,6 +101,29 @@ class Engine:
         if not ms:
             return ""
         return "\n\n".join(f"[{m.id}] {m.objective}\n{m.body}"[:4000] for m in ms)
+
+    def _ruled_out(self, con) -> set[str]:
+        """Work this program has already ruled out, as identity keys.
+
+        A dead end has to be a constraint the planner cannot argue with. It was
+        prose in a log before, competing for attention with everything else in
+        the context, and the machine duly wrote a correct diagnosis of its own
+        repetition loop and then repeated. Text does not bind; a set does.
+        """
+        if self.menu is None:
+            return set()
+        try:
+            rows = con.execute(
+                "SELECT body FROM threads WHERE kind='deadend'").fetchall()
+        except Exception:  # noqa: BLE001
+            return set()
+        out: set[str] = set()
+        for (body,) in rows:
+            try:
+                out.add(self.menu.key(json.loads(body or "{}")))
+            except Exception:  # noqa: BLE001
+                continue
+        return out
 
     def _consecutive_no_ops(self, con) -> int:
         """How many cycles in a row ended in do_nothing, most recent first."""
@@ -187,7 +216,8 @@ class Engine:
         plan, plan_complaints, false_no_op = validate_plan(
             plan, work_available=work_available,
             max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)),
-            allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)))
+            allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)),
+            menu=self.menu, ruled_out=self._ruled_out(con))
         # A guard that only objects is not a floor. Watched live: with a
         # standing order open and due, the planner declared the program "at a
         # stalemate with no actionable path forward", the false-no-op check
@@ -233,6 +263,10 @@ class Engine:
 
         ledger: list[dict] = []
         pre = blast.snapshot(self.cfg["protected_paths"])
+        # The referee is read BEFORE the work and again after. What a cycle
+        # achieved is the difference between two readings of the world, and it
+        # is not available from anything the cycle says about itself.
+        before = self.referee.state() if self.referee else {}
         if not plan.get("do_nothing"):
             for task in plan.get("tasks", []):
                 ledger.append(self._do_task(con, ts, cdir, task, text_only))
@@ -260,7 +294,26 @@ class Engine:
         # appeared, or vanished during the cycle lands in the outcome.
         touched = blast.diff(pre, blast.snapshot(self.cfg["protected_paths"]))
 
-        grade = derive_grade(ledger)
+        if self.referee is not None:
+            after = self.referee.state()
+            moved = R.Referee.delta(before, after)
+            grade = R.grade(moved,
+                            attempted=bool([e for e in ledger
+                                            if e["status"] in ("done", "failed")]),
+                            honest_no_op=bool(plan.get("do_nothing")) and not false_no_op)
+            # A ledger that says done while the world did not move is the exact
+            # shape of four separate A grades in the alpha. Recording the
+            # disagreement is what turns it from a silent lie into a signal.
+            claimed = [e for e in ledger if e["status"] == "done"]
+            if claimed and not moved:
+                plan_complaints.append(
+                    f"{len(claimed)} task(s) reported done and the referee did not "
+                    "move; the ledger is not the score")
+                events.emit(self.home, "decoupled", cycle=ts,
+                            claimed=[e["id"] for e in claimed], state=after)
+        else:
+            moved = {}
+            grade = derive_grade(ledger)
         con.execute("INSERT OR REPLACE INTO journal (cycle_ts, body, created_at) VALUES (?,?,?)",
                     (ts, journal + (("\n\n[review]\n" + review) if review else ""), time.time()))
         # A cycle that did nothing has nothing to teach. Evidence gates "done";
@@ -299,8 +352,9 @@ class Engine:
             "ts": ts, "grade": grade, "plan": plan, "ledger": ledger,
             "blast_radius": touched, "inbox_consumed": n_inbox,
             "plan_complaints": plan_complaints, "false_no_op": false_no_op,
+            "referee_before": before, "referee_moved": moved,
             "lessons": [l.__dict__ for l in lessons]}, ensure_ascii=False, indent=2), encoding="utf-8")
-        events.emit(self.home, "cycle", cycle=ts, grade=grade,
+        events.emit(self.home, "cycle", cycle=ts, grade=grade, moved=moved,
                     statuses=[e["status"] for e in ledger],
                     blast=len(touched), inbox_consumed=n_inbox,
                     lessons=[f"{l.situation} -> {l.action} -> {l.outcome}" for l in lessons],

@@ -55,7 +55,8 @@ def _is_content_free(what: str) -> bool:
 
 
 def validate_plan(plan: dict, *, work_available: bool, max_tasks: int = 1,
-                  allow_text_tasks: bool = True) -> tuple[dict, list[str], bool]:
+                  allow_text_tasks: bool = True, menu=None,
+                  ruled_out: set[str] | None = None) -> tuple[dict, list[str], bool]:
     """(repaired_plan, complaints, needs_replan).
 
     `work_available` comes from the engine's own eligibility check (a pending
@@ -78,7 +79,34 @@ def validate_plan(plan: dict, *, work_available: bool, max_tasks: int = 1,
 
     if not do_nothing:
         kept = []
+        seen: set[str] = set()
         for t in tasks:
+            # Typed admissibility comes first, because when a menu exists every
+            # check below it is asking about prose that is no longer there. A
+            # task that is not an admissible SHAPE of work is not a badly
+            # written task, it is not a task.
+            if menu is not None:
+                ok, why = menu.validate(t)
+                if not ok:
+                    complaints.append(f"task {t.get('id', '?')!r} refused: {why}")
+                    continue
+                key = menu.key(t)
+                if key in seen:
+                    complaints.append(
+                        f"task {t.get('id', '?')!r} is the same work as one already "
+                        "in this plan; rewording does not make it new")
+                    continue
+                if ruled_out and key in ruled_out:
+                    # A recorded dead end is a constraint, not a note in a log
+                    # the planner may skim. Watched live: the machine wrote a
+                    # correct diagnosis of its own repetition and then repeated.
+                    complaints.append(
+                        f"task {t.get('id', '?')!r} was already ruled out; a dead end "
+                        "is a constraint, not a suggestion")
+                    continue
+                seen.add(key)
+                kept.append(t)
+                continue
             if _is_content_free(str(t.get("what", ""))):
                 complaints.append(f"task {t.get('id', '?')!r} had no content in `what`; dropped")
                 continue
