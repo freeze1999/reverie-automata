@@ -160,6 +160,12 @@ class Engine:
             con, cooldown_minutes=float(self.cfg.get("thread_cooldown_minutes", 0) or 0),
             limit=20)
         for tid, kind, title in rows:
+            # A dead end is a record of what was ruled out. Picking one up as
+            # work is asking the machine to redo the thing it just abandoned,
+            # and it did: a thread titled "dead end: write_artifact ..." was
+            # forced into a task and answered with an unrelated computation.
+            if kind == "deadend":
+                continue
             row = con.execute("SELECT body FROM threads WHERE id=?", (tid,)).fetchone()
             if not row or not row[0]:
                 continue
@@ -184,6 +190,19 @@ class Engine:
         demonstrably due, and the thread's own title is the most honest
         statement of that something available without asking anyone.
         """
+        # Under a typed menu this path must produce a typed task or nothing.
+        # It used to build one out of a thread TITLE, with no type, and an
+        # untyped task has no postcondition, so it passed unexamined. Measured
+        # over 57 unattended cycles: twenty one tasks filed this way, three of
+        # them graded done, all three false. One computed the sum of a hundred
+        # rationals in answer to a thread titled "dead end: write_artifact".
+        #
+        # The gates applied to what the planner PROPOSED and not to what the
+        # wrapper FORCED, which is the same blind spot as every other entry
+        # where the operator turned out to be inside the threat model.
+        if self.menu is not None:
+            return None
+
         rows = self.store.due_threads(
             con, cooldown_minutes=float(self.cfg.get("thread_cooldown_minutes", 0) or 0),
             limit=1)

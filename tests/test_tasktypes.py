@@ -267,3 +267,86 @@ def test_the_risk_classifier_reads_intent_and_not_payload(tmp_path):
     risky = {"type": "compute", "path": "results/x.json",
              "why": "deploy this to production", "script": "print(1)"}
     assert r.engine._wrapper_risk(risky)[0] == "RISKY"
+
+
+def test_the_wrapper_cannot_force_an_untyped_task_under_a_menu(tmp_path):
+    """The M0 verdict, as one test. Over 57 unattended cycles the wrapper filed
+    21 tasks built from thread TITLES, with no type, so no postcondition ran and
+    three of them graded done falsely. One answered a thread called "dead end:
+    write_artifact" by computing the sum of a hundred rationals. The gates
+    applied to what the planner proposed and not to what the wrapper forced."""
+    import time as _time
+    from reverie_automata.adapters import agents
+    from reverie_automata.config import Config
+    from reverie_automata.runner import Runner
+
+    class Refuses:
+        name = "refuser2"
+
+        def __init__(self, options=None):
+            pass
+
+        def complete(self, s, u, *, max_tokens=1000):
+            return '<<PLAN>>{"tasks": [], "do_nothing": true}<<END>>'
+
+        def run_session(self, d, **kw):
+            return "<<RESULT>>done<<END>>\n<<VERIFY>>anything at all<<END>>"
+
+    agents.REGISTRY["refuser2"] = Refuses
+    cfg = Config()
+    cfg.data.update({
+        "home": str(tmp_path / "h"), "trigger": "work", "window": {"start": 0, "end": 0},
+        "idle_minutes": 0, "min_gap_minutes": 0, "max_cycles_per_day": 99,
+        "planner": {"backend": "refuser2"}, "agent": {"backend": "refuser2"},
+        "menu": MENU,
+    })
+    r = Runner(cfg, last_input_ts=lambda: _time.time() - 7200, is_available=lambda: True)
+
+    con = r.store.connect()
+    # a plain prose thread, exactly what used to get forced into a task
+    r.store.add_thread(con, "advance the programme by one verifiable step", "",
+                       kind="mandate")
+    con.close()
+
+    for _ in range(3):
+        r.tick()
+
+    import json as _json
+    for d in sorted((Path(cfg["home"]) / "cycles").glob("*")):
+        out = _json.loads((d / "outcome.json").read_text())
+        assert all(e["status"] != "done" for e in out["ledger"]), out["ledger"]
+
+
+def test_a_dead_end_is_never_picked_up_as_work(tmp_path):
+    """A dead end records what was ruled out. Offering it back as a task asks
+    the machine to redo what it just abandoned."""
+    import json as _json
+    import time as _time
+    from reverie_automata.adapters import agents
+    from reverie_automata.config import Config
+    from reverie_automata.runner import Runner
+
+    class Quiet:
+        name = "quiet"
+
+        def __init__(self, options=None):
+            pass
+
+        def complete(self, s, u, *, max_tokens=1000):
+            return '<<PLAN>>{"tasks": [], "do_nothing": true}<<END>>'
+
+        def run_session(self, d, **kw):
+            return "<<RESULT>>done<<END>>\n<<VERIFY>>r<<END>>"
+
+    agents.REGISTRY["quiet"] = Quiet
+    cfg = Config()
+    cfg.data.update({"home": str(tmp_path / "h"), "menu": MENU,
+                     "planner": {"backend": "quiet"}, "agent": {"backend": "quiet"}})
+    r = Runner(cfg, last_input_ts=lambda: _time.time() - 7200)
+    con = r.store.connect()
+    # a dead end whose body IS a valid typed task: still must not be worked
+    r.store.add_thread(con, "dead end: resolve 1503.08733",
+                       _json.dumps({"type": "resolve_citation", "arxiv_id": "1503.08733",
+                                    "claimed_title": "t"}), kind="deadend")
+    assert r.engine._typed_from_due_thread(con) is None
+    con.close()
