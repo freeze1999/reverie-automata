@@ -41,14 +41,32 @@ SELF_REPORTED = "self"     # counted from text the machine may write. NOT a refe
 
 @dataclass(frozen=True)
 class Component:
+    """One number in the state vector, and the two questions it must answer.
+
+    `checked_against` says what outside fact validates it. `counts_distinct`
+    says what makes two of the things it counts the SAME thing, and it exists
+    because leaving it implicit cost a false positive on the first milestone
+    run: a citations component, genuinely checked against arXiv's own metadata,
+    counted `arXiv:2407.07911`, `2407.07911` and `arXiv:2407.07911v5` as three
+    citations. It rose from three to five while establishing nothing.
+
+    **An external check does not imply an idempotent count.** A component needs
+    both: an outside fact to answer to, and an answer that does not change when
+    the same question is asked twice in different words. Writing the second
+    sentence is what catches the second failure, so the field is required
+    rather than optional and the audit refuses a component without one.
+    """
+
     name: str
     count: Callable[[], int]
     checked_against: str
     why: str
+    counts_distinct: str = ""
 
     @property
     def admissible(self) -> bool:
-        return self.checked_against in (EXTERNAL, DERIVED)
+        return (self.checked_against in (EXTERNAL, DERIVED)
+                and bool(self.counts_distinct.strip()))
 
 
 class Referee:
@@ -61,9 +79,17 @@ class Referee:
         """Every component that cannot say what checks it. Called before the
         referee is allowed to grade anything, because a vector is only as
         trustworthy as its softest entry."""
-        return [f"{c.name}: counted from {c.checked_against}, which the machine "
-                f"can write; this cannot grade anything"
-                for c in self.components if not c.admissible]
+        problems = []
+        for c in self.components:
+            if c.checked_against not in (EXTERNAL, DERIVED):
+                problems.append(
+                    f"{c.name}: counted from {c.checked_against}, which the "
+                    "machine can write; this cannot grade anything")
+            elif not c.counts_distinct.strip():
+                problems.append(
+                    f"{c.name}: does not say what makes two of these the same "
+                    "thing, so nothing stops the count rising on a duplicate")
+        return problems
 
     def state(self) -> dict[str, int]:
         out: dict[str, int] = {}

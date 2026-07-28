@@ -14,8 +14,8 @@ from reverie_automata.referee import (DERIVED, EXTERNAL, SELF_REPORTED,
                                       Component, Referee, grade)
 
 
-def _c(name, value, kind=DERIVED):
-    return Component(name, lambda: value, kind, "test")
+def _c(name, value, kind=DERIVED, distinct="one per thing"):
+    return Component(name, lambda: value, kind, "test", distinct)
 
 
 def test_a_self_reported_component_is_refused_by_the_audit():
@@ -40,7 +40,8 @@ def test_an_unreadable_component_is_absent_rather_than_zero():
     false A waiting to happen."""
     def boom():
         raise OSError("gone")
-    r = Referee([Component("artifacts", boom, EXTERNAL, "t"), _c("citations", 3)])
+    r = Referee([Component("artifacts", boom, EXTERNAL, "t", "one per file"),
+                 _c("citations", 3)])
     assert r.state() == {"citations": 3}
 
 
@@ -80,3 +81,15 @@ def test_the_delta_ignores_components_that_appeared_or_vanished():
     comparing across a schema change would invent one."""
     assert Referee.delta({"a": 1}, {"a": 1, "b": 5}) == {}
     assert Referee.delta({"a": 1, "b": 5}, {"a": 1}) == {}
+
+
+def test_a_component_that_cannot_say_what_makes_two_things_the_same_is_refused():
+    """A17. A citations component genuinely checked against arXiv's metadata
+    counted three spellings of one identifier as three citations, and rose from
+    three to five while establishing nothing. An external check does not imply
+    an idempotent count."""
+    r = Referee([Component("citations", lambda: 5, EXTERNAL, "resolved", "")])
+    problems = r.audit()
+    assert len(problems) == 1
+    assert "same thing" in problems[0] and "duplicate" in problems[0]
+    assert r.state() == {}

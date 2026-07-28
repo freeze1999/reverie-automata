@@ -55,7 +55,8 @@ def _runner(tmp_path, plan, moves):
         "min_gap_minutes": 0, "max_cycles_per_day": 99,
         "planner": {"backend": "grader-test"}, "agent": {"backend": "grader-test"},
         "referee": Referee([Component("artifacts", lambda: STATE["artifacts"],
-                                      DERIVED, "artifacts that pass the contract")]),
+                                      DERIVED, "artifacts that pass the contract",
+                                      "one per artifact path")]),
     })
     r = Runner(cfg, last_input_ts=lambda: time.time() - 7200, is_available=lambda: True)
     d = Path(cfg["home"]) / "mandates"
