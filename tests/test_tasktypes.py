@@ -224,3 +224,46 @@ def test_a_complete_supplied_task_is_filed_when_planning_produces_nothing(tmp_pa
     assert out["ledger"], out["plan_complaints"]
     assert out["plan"]["tasks"][0]["arxiv_id"] == "2407.07911"
     assert any("supplied task was due" in c for c in out["plan_complaints"])
+
+
+def test_the_risk_classifier_reads_intent_and_not_payload(tmp_path):
+    """Found live: a task whose script field contained `np.prod(...)` was parked
+    for approval, because a word boundary sits either side of a dot and `prod`
+    was a risk token. Third time a token short enough to appear inside ordinary
+    code has been used as a discriminator here."""
+    import time as _time
+    from reverie_automata.adapters import agents
+    from reverie_automata.config import Config
+    from reverie_automata.runner import Runner
+    from reverie_automata.tasktypes import Menu, TaskType
+
+    CODE = TaskType(name="compute", required=("path", "script"),
+                    identity=("path",), payload=("script",),
+                    summary="run something and write it down")
+
+    class Noop:
+        name = "risk-test"
+
+        def __init__(self, options=None):
+            pass
+
+        def complete(self, s, u, *, max_tokens=1000):
+            return '<<PLAN>>{"tasks": [], "do_nothing": true}<<END>>'
+
+        def run_session(self, d, **kw):
+            return "<<RESULT>>done<<END>>\n<<VERIFY>>r<<END>>"
+
+    agents.REGISTRY["risk-test"] = Noop
+    cfg = Config()
+    cfg.data.update({"home": str(tmp_path / "h"), "menu": Menu([CODE]),
+                     "planner": {"backend": "risk-test"}, "agent": {"backend": "risk-test"}})
+    r = Runner(cfg, last_input_ts=lambda: _time.time() - 7200)
+
+    task = {"type": "compute", "path": "results/x.json",
+            "script": "import numpy as np\nprint(np.prod([1,2,3]))"}
+    assert r.engine._wrapper_risk(task) == ("SAFE", "")
+
+    # and intent that really is risky is still caught
+    risky = {"type": "compute", "path": "results/x.json",
+             "why": "deploy this to production", "script": "print(1)"}
+    assert r.engine._wrapper_risk(risky)[0] == "RISKY"

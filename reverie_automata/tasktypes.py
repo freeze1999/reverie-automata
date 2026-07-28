@@ -56,6 +56,11 @@ class TaskType:
     postcondition: Callable[[dict, str, Any], tuple[bool, str]] | None = None
     optional: tuple[str, ...] = ()
     instruction: Callable[[dict], str] | None = None
+    # Fields that carry DATA rather than intent: source code, captured output,
+    # quoted text. The risk classifier must not read them, because a pattern
+    # written for a prose description reads a program as a threat and parks
+    # legitimate work. Intent is what a guard should judge.
+    payload: tuple[str, ...] = ()
 
     def render(self, task: dict) -> str:
         """The instruction the executor receives, generated from the fields.

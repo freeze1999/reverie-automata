@@ -69,7 +69,14 @@ def derive_grade(ledger: list[dict]) -> str:
 RISKY_HINTS = re.compile(
     r"\bsudo\b|\bsystemctl\b|\bcrontab\b|\bdeploy\w*|\bpush\b|\binstall\w*|"
     r"\bdelete\w*|\bdrop\s+table\b|\brestart\w*|\bmigrat\w*|\bpassword\w*|"
-    r"\bsecret\w*|\bprod\b|\bproduction\b", re.I)
+    r"\bsecret\w*|\bproduction\b", re.I)
+# `prod` was here beside `production` and had to go: a word boundary sits either
+# side of a dot, so it matched `np.prod`, `math.prod` and `sympy.prod`, and
+# parked a legitimate exact-arithmetic task for approval. This is the third
+# time a token short enough to appear inside ordinary code has been used as a
+# discriminator here, after re-prod-uce and after `program` in the routing
+# rules. The lesson keeps arriving in the same envelope: a pattern that fires
+# on a substring of normal work is not cautious, it is broken.
 
 
 class Engine:
@@ -192,7 +199,21 @@ class Engine:
 
     # -- risk (defense in depth: wrapper classifies too, and wins) ----------
     def _wrapper_risk(self, task: dict) -> tuple[str, str]:
-        blob = json.dumps(task, ensure_ascii=False)
+        """Scan what the task INTENDS, never what it carries.
+
+        A typed task can hold source code in a field, and a risk pattern
+        written for a 240-character prose description then runs over a program.
+        Every code-shaped token becomes a false positive: `prod`, `install`,
+        `push` and `delete` all appear in ordinary source. So payload fields
+        are excluded, and the classifier reads the fields that say what the
+        task is for.
+        """
+        payload = ()
+        if self.menu is not None:
+            t = self.menu.get(task)
+            payload = getattr(t, "payload", ()) if t else ()
+        scanned = {k: v for k, v in task.items() if k not in payload}
+        blob = json.dumps(scanned, ensure_ascii=False)
         m = RISKY_HINTS.search(blob)
         return ("RISKY", m.group(0)) if m else ("SAFE", "")
 
@@ -268,11 +289,16 @@ class Engine:
         # never the model's to make (the gate decides that); it is the engine
         # declining to accept "there is nothing to do" from a party that has
         # already been shown there is.
-        # Supplied typed work outranks a refusal immediately, without waiting
-        # for a second one: the queue holds a complete, admissible task and the
-        # only reason it was not planned is that the planner could not restate
-        # it. There is nothing to deliberate about.
-        if not plan.get("tasks"):
+        # Supplied typed work outranks whatever the planner invented, not only
+        # a refusal. Watched live: once the grammar was fixed the planner
+        # happily authored its own tasks every cycle, so a fallback that fired
+        # only on an empty plan never fired at all, and three complete supplied
+        # tasks sat untouched for nine cycles while the machine invented and
+        # failed at its own versions of the same work.
+        #
+        # The queue is authority and the plan is a proposal. Work that came
+        # from outside, complete and due, is not competing with a guess.
+        if not plan.get("tasks") or self._typed_from_due_thread(con) is not None:
             supplied = self._typed_from_due_thread(con)
             if supplied is not None:
                 plan["tasks"] = [supplied]
