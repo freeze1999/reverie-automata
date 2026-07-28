@@ -34,6 +34,22 @@ from typing import Any
 # "no plan" and the validator then flagged as a false no-op. Two cycles were
 # lost to a sentence that had no value at any length. A cap is the same trick
 # as the grammar itself: make the failure impossible rather than discourage it.
+def plan_schema(task_schema: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The plan envelope, with whatever a task is allowed to look like.
+
+    A menu that constrains validation and not the GRAMMAR constrains nothing:
+    watched live, the planner was handed a typed menu in its prompt while the
+    schema still forced the old free-prose shape, so it dutifully wrote the type
+    name into the `what` field and every task was refused. The grammar is the
+    stronger signal and it has to agree with the validator.
+    """
+    import copy
+    schema = copy.deepcopy(PLAN_SCHEMA)
+    if task_schema is not None:
+        schema["schema"]["properties"]["tasks"]["items"] = task_schema
+    return schema
+
+
 PLAN_SCHEMA: dict[str, Any] = {
     "name": "plan",
     "schema": {

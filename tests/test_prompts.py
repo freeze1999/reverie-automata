@@ -50,5 +50,24 @@ def test_execute_states_the_turn_cap_it_will_be_cut_off_at():
 def test_the_standing_plan_offers_only_the_mode_the_engine_accepts():
     """Routing is the wrapper's decision. Leaving "delegate" on the planner's
     menu invites it to choose something the engine will not read."""
-    assert '"mode": "tool"' in P.PLAN_STANDING
-    assert "tool|text|delegate" not in P.PLAN_STANDING
+    assert '"mode": "tool"' in P.PROSE_ENVELOPE
+    assert "tool|text|delegate" not in P.PROSE_ENVELOPE
+
+
+def test_the_typed_envelope_puts_the_kind_in_the_type_field():
+    """Found on the first live cycle of M0: the menu constrained validation and
+    not the grammar, so the planner wrote the type name into `what` and every
+    task was refused. The grammar is the stronger signal, and the example the
+    model copies has to agree with it."""
+    assert '"type"' in P.TYPED_ENVELOPE
+    assert '"what"' not in P.TYPED_ENVELOPE
+    assert "Do not put the kind's name in any other" in P.TYPED_ENVELOPE
+
+
+def test_the_typed_plan_schema_carries_the_menu_shape():
+    from reverie_automata.profiles import plan_schema
+    task = {"type": "object", "properties": {"type": {"enum": ["x"]}}}
+    built = plan_schema(task)
+    assert built["schema"]["properties"]["tasks"]["items"] == task
+    # and the default is untouched, so an engine without a menu is unaffected
+    assert plan_schema()["schema"]["properties"]["tasks"]["items"] != task

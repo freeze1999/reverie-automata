@@ -62,9 +62,14 @@ leaves a receipt: a file, a computed value, a resolved identifier. "Review",
 {menu}
 
 Reason as briefly as you can, then emit exactly one envelope:
-<<PLAN>>{{"learned": "...", "tasks": [{{"id": "t1", "what": "...", "why": "...",
-"mode": "tool", "risk": "SAFE|RISKY", "risk_reason": "", "thread": ""}}],
-"do_nothing": false, "do_nothing_reason": ""}}<<END>>"""
+{envelope}"""
+
+PROSE_ENVELOPE = """<<PLAN>>{{"learned": "...", "tasks": [{{"id": "t1", "what": "...", "why": "...", "mode": "tool", "risk": "SAFE|RISKY", "risk_reason": "", "thread": ""}}], "do_nothing": false, "do_nothing_reason": ""}}<<END>>"""
+
+TYPED_ENVELOPE = """<<PLAN>>{{"learned": "...", "tasks": [{{"id": "t1", "type": "<one of the kinds listed above>", "<its required fields>": "...", "why": "...", "risk": "SAFE|RISKY"}}], "do_nothing": false, "do_nothing_reason": ""}}<<END>>
+
+The `type` field is the kind of work. Do not put the kind's name in any other
+field: a task whose type is missing is refused however well it is described."""
 
 
 TYPED_MENU = """This program admits exactly these kinds of work. A task is one

@@ -197,10 +197,11 @@ class Engine:
         # preference: an engine woken because work is due must not be told that
         # nobody is asking anything of it.
         if str(self.cfg.get("trigger", "idle")).lower() in ("work", "both"):
+            typed = self.menu is not None
             prompt = P.PLAN_STANDING.format(
                 context=context, constraints=P.constraints(self.cfg),
-                menu=(P.TYPED_MENU.format(menu=self.menu.describe())
-                      if self.menu is not None else ""))
+                menu=(P.TYPED_MENU.format(menu=self.menu.describe()) if typed else ""),
+                envelope=(P.TYPED_ENVELOPE if typed else P.PROSE_ENVELOPE))
         else:
             prompt = P.PLAN.format(context=context)
         import os
