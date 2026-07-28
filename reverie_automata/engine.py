@@ -197,8 +197,10 @@ class Engine:
         # preference: an engine woken because work is due must not be told that
         # nobody is asking anything of it.
         if str(self.cfg.get("trigger", "idle")).lower() in ("work", "both"):
-            prompt = P.PLAN_STANDING.format(context=context,
-                                            constraints=P.constraints(self.cfg))
+            prompt = P.PLAN_STANDING.format(
+                context=context, constraints=P.constraints(self.cfg),
+                menu=(P.TYPED_MENU.format(menu=self.menu.describe())
+                      if self.menu is not None else ""))
         else:
             prompt = P.PLAN.format(context=context)
         import os
@@ -364,7 +366,12 @@ class Engine:
     # -- one task -----------------------------------------------------------
     def _do_task(self, con, ts, cdir, task, text_only) -> dict:
         tid = str(task.get("id", "?"))
-        what = task.get("what", "")
+        # A typed task has no prose to run on, and that is the point: the
+        # instruction the executor sees is generated from the fields rather
+        # than written by the planner, so there is no free text for a tool name
+        # or a mangled value to hide in.
+        what = (self.menu.render(task) if self.menu and self.menu.get(task)
+                else task.get("what", ""))
         wrisk, wpat = self._wrapper_risk(task)
         final = "RISKY" if "RISKY" in (wrisk, str(task.get("risk", "SAFE")).upper()) else "SAFE"
         if final == "RISKY":
@@ -451,6 +458,17 @@ class Engine:
         status = result if result in ("done", "failed", "parked") else "failed"
         if status == "done" and not verify:
             status = "failed"  # no evidence, no done
+        if status == "done" and self.menu is not None:
+            # Evidence gates existence; this gates identity. The claim is now
+            # examined against the world rather than against itself, which is
+            # the difference between a receipt saying a file was written and a
+            # check that the file is the thing that was asked for.
+            ok, why = self.menu.check(task, verify, self.home)
+            if not ok:
+                status = "failed"
+                verify = f"postcondition failed: {why}\n\n{verify}"
+                events.emit(self.home, "postcondition", cycle=ts, task=tid,
+                            passed=False, why=why[:300])
         con.execute("UPDATE tasks SET status=?, ended_at=?, result=? WHERE cycle_ts=? AND task_id=? AND status='started'",
                     (status, time.time(), verify[:2000], ts, tid))
         con.commit()

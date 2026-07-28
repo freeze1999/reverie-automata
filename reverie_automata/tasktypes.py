@@ -55,6 +55,23 @@ class TaskType:
     summary: str
     postcondition: Callable[[dict, str, Any], tuple[bool, str]] | None = None
     optional: tuple[str, ...] = ()
+    instruction: Callable[[dict], str] | None = None
+
+    def render(self, task: dict) -> str:
+        """The instruction the executor receives, generated from the fields.
+
+        Not written by the planner, which matters more than it looks. Two of
+        this project's defects came from prose in a task being read as an
+        instruction by something else: the word "delegate" in a task caused the
+        model to call the tool of that name, and an attempt to work around that
+        by asking for a value spelled as two fragments produced "degate". A
+        rendered instruction has no free text for either failure to live in.
+        """
+        if self.instruction is not None:
+            return self.instruction(task)
+        fields = ", ".join(f"{f}={task[f]!r}" for f in self.required
+                           if str(task.get(f, "")).strip())
+        return f"{self.name}: {self.summary}. Fields: {fields}"
 
     def key(self, task: dict) -> str:
         """What makes two of these the same work. Values, never prose."""
@@ -91,6 +108,27 @@ class Menu:
         if gaps:
             return False, f"{t.name} is missing required field(s): {gaps}"
         return True, ""
+
+    def render(self, task: dict) -> str:
+        t = self.get(task)
+        return t.render(task) if t else str(task.get("what", ""))
+
+    def check(self, task: dict, receipt: str, home) -> tuple[bool, str]:
+        """The postcondition, asked of the world after the claim.
+
+        No type means no check, and that is a gap rather than a pass: it is
+        recorded as such so a menu with unchecked types cannot be mistaken for
+        one that verifies everything.
+        """
+        t = self.get(task)
+        if t is None or t.postcondition is None:
+            return True, "no postcondition defined for this type"
+        try:
+            return t.postcondition(task, receipt, home)
+        except Exception as e:  # noqa: BLE001
+            # A check that crashed did not pass. The opposite default would
+            # turn every bug in a postcondition into a free done.
+            return False, f"the postcondition raised {type(e).__name__}: {e}"
 
     def schema(self) -> dict[str, Any]:
         """A json schema for one task.

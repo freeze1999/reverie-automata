@@ -59,10 +59,24 @@ leaves a receipt: a file, a computed value, a resolved identifier. "Review",
 
 {constraints}
 
+{menu}
+
 Reason as briefly as you can, then emit exactly one envelope:
 <<PLAN>>{{"learned": "...", "tasks": [{{"id": "t1", "what": "...", "why": "...",
 "mode": "tool", "risk": "SAFE|RISKY", "risk_reason": "", "thread": ""}}],
 "do_nothing": false, "do_nothing_reason": ""}}<<END>>"""
+
+
+TYPED_MENU = """This program admits exactly these kinds of work. A task is one
+of these objects and nothing else; there is no free-text task, and a kind that
+is not listed cannot be filed:
+
+{menu}
+
+Emit each task as {{"id": "t1", "type": "<one of the above>", <its required
+fields>, "why": "...", "risk": "SAFE|RISKY"}}. A task missing a required field
+is refused, and two tasks whose identifying fields match are the same task
+however differently you word them."""
 
 
 def constraints(cfg) -> str:
