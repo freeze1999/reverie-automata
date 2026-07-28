@@ -136,6 +136,39 @@ class Engine:
             n += 1
         return n
 
+    def _typed_from_due_thread(self, con) -> dict | None:
+        """A due thread whose body IS a typed task, handed over unchanged.
+
+        The supply path. Measured twice: the executor picks a plausible task
+        TYPE and leaves its required fields empty, because filling them means
+        transcribing specific values, which is the one thing this class of
+        model cannot do. Refusing the incomplete task is correct and produces
+        nothing; the harness has to supply what the executor cannot author.
+        That is the same rule as perturbing a repeated call, applied one level
+        up: nothing is left to the executor noticing.
+        """
+        if self.menu is None:
+            return None
+        rows = self.store.due_threads(
+            con, cooldown_minutes=float(self.cfg.get("thread_cooldown_minutes", 0) or 0),
+            limit=20)
+        for tid, kind, title in rows:
+            row = con.execute("SELECT body FROM threads WHERE id=?", (tid,)).fetchone()
+            if not row or not row[0]:
+                continue
+            try:
+                task = json.loads(row[0])
+            except ValueError:
+                continue
+            if not isinstance(task, dict) or not self.menu.get(task):
+                continue
+            ok, _ = self.menu.validate(task)
+            if ok:
+                return dict(task, id="t1", thread=tid,
+                            why=f"supplied work, thread #{tid}",
+                            risk=task.get("risk", "SAFE"))
+        return None
+
     def _task_from_due_thread(self, con) -> dict | None:
         """The top due thread, as a task, unedited.
 
@@ -235,6 +268,20 @@ class Engine:
         # never the model's to make (the gate decides that); it is the engine
         # declining to accept "there is nothing to do" from a party that has
         # already been shown there is.
+        # Supplied typed work outranks a refusal immediately, without waiting
+        # for a second one: the queue holds a complete, admissible task and the
+        # only reason it was not planned is that the planner could not restate
+        # it. There is nothing to deliberate about.
+        if not plan.get("tasks"):
+            supplied = self._typed_from_due_thread(con)
+            if supplied is not None:
+                plan["tasks"] = [supplied]
+                plan["do_nothing"] = False
+                false_no_op = False
+                plan_complaints.append(
+                    "no task survived planning; a complete supplied task was due "
+                    "and was filed by the wrapper")
+
         if false_no_op and self._consecutive_no_ops(con) >= 1:
             forced = self._task_from_due_thread(con)
             if forced:

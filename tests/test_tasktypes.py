@@ -171,3 +171,56 @@ def test_without_a_menu_the_old_prose_path_still_runs():
         {"tasks": [{"id": "t1", "what": "sweep the vault", "mode": "tool"}],
          "do_nothing": False}, work_available=True, max_tasks=1)
     assert len(plan["tasks"]) == 1
+
+
+def test_a_complete_supplied_task_is_filed_when_planning_produces_nothing(tmp_path):
+    """Measured twice on the milestone run: the planner picks a plausible task
+    TYPE and leaves the required fields empty, because filling them means
+    transcribing specific values, which is the wall. Refusing is correct and
+    produces nothing, so the harness supplies what the executor cannot author.
+    """
+    import json as _json
+    import time as _time
+    from reverie_automata.adapters import agents
+    from reverie_automata.config import Config
+    from reverie_automata.runner import Runner
+
+    class Empty:
+        name = "empty-planner"
+
+        def __init__(self, options=None):
+            pass
+
+        def complete(self, system, user, *, max_tokens=1000):
+            # exactly what the 27B did: right type, no fields
+            return ('<<PLAN>>{"tasks": [{"id": "t1", "type": "resolve_citation",'
+                    ' "why": "M1 needs a source", "risk": "SAFE"}],'
+                    ' "do_nothing": false}<<END>>')
+
+        def run_session(self, directive, **kw):
+            return "<<RESULT>>done<<END>>\n<<VERIFY>>receipt<<END>>"
+
+    agents.REGISTRY["empty-planner"] = Empty
+    cfg = Config()
+    cfg.data.update({
+        "home": str(tmp_path / "h"), "trigger": "work", "window": {"start": 0, "end": 0},
+        "idle_minutes": 0, "min_gap_minutes": 0, "max_cycles_per_day": 99,
+        "planner": {"backend": "empty-planner"}, "agent": {"backend": "empty-planner"},
+        "menu": MENU,
+    })
+    r = Runner(cfg, last_input_ts=lambda: _time.time() - 7200, is_available=lambda: True)
+
+    con = r.store.connect()
+    r.store.add_thread(con, "supplied: verify 2407.07911",
+                       _json.dumps({"type": "resolve_citation",
+                                    "arxiv_id": "2407.07911",
+                                    "claimed_title": "Pluckerians"}),
+                       kind="supplied")
+    con.close()
+
+    r.tick()
+    latest = sorted((Path(cfg["home"]) / "cycles").glob("*"))[-1]
+    out = _json.loads((latest / "outcome.json").read_text())
+    assert out["ledger"], out["plan_complaints"]
+    assert out["plan"]["tasks"][0]["arxiv_id"] == "2407.07911"
+    assert any("supplied task was due" in c for c in out["plan_complaints"])
