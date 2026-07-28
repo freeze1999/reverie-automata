@@ -208,9 +208,11 @@ class LocalAgent:
                 result = (
                     f"[harness] you have now made this exact call twice: "
                     f"{tool}({arg[:120]}). An identical call cannot return "
-                    f"anything new. Do not make it a third time. Either change "
-                    f"the argument, use a different tool, or call give_up with "
-                    f"what blocked you. The last result was: {result[:600]}")
+                    f"anything new. Do not make it a third time. If the work is "
+                    f"ALREADY DONE, call done with what you established. "
+                    f"Otherwise change the argument, use a different tool, or "
+                    f"call give_up with what blocked you. "
+                    f"The last result was: {result[:600]}")
                 _live("perturbed", turn=turn + 1, tool=tool)
 
             self.transcript.append(
@@ -223,6 +225,13 @@ class LocalAgent:
             # end, and an identical call with an identical argument cannot
             # produce new information whatever it returns.
             if repeats[signature] >= 3:
+                # A false NEGATIVE lives here and it was measured: a tool that
+                # is idempotent answers "already recorded" to the second and
+                # third call, which means the work SUCCEEDED on the first and
+                # the session is about to be scored as a failure. The harness
+                # was killing finished work because the executor did not know
+                # to stop, so the perturbation above now names calling done as
+                # an option, and this verdict says what actually happened.
                 outcome = "failed"
                 evidence = (f"the same call was made {repeats[signature]} times "
                             f"with the same argument ({tool}), which cannot "

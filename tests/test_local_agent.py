@@ -141,3 +141,26 @@ def test_the_harness_perturbs_on_the_second_identical_call():
     # copy of the same unhelpful error.
     assert any("[harness] you have now made this exact call twice" in p for p in seen), seen[-1][-300:]
     assert "the same call was made" in out
+
+
+def test_the_perturbation_offers_done_as_a_way_out():
+    """Measured: an idempotent tool answered "already recorded" to the second
+    and third call, meaning the work had SUCCEEDED on the first, and the
+    session was then scored as a failure. The harness was killing finished
+    work because the executor did not know it could stop."""
+    from reverie_automata.adapters.local_agent import LocalAgent
+    seen = []
+
+    class Server:
+        schema = None
+
+        def complete(self, system, user, *, max_tokens=1000):
+            seen.append(user)
+            return json.dumps({"thought": "t", "tool": "record",
+                               "argument": "a :: b"})
+
+    a = LocalAgent({"tools": {"record": ("write it", lambda x: "already recorded: a")},
+                    "max_turns": 4})
+    a.server = Server()
+    a.run_session("do it")
+    assert any("If the work is ALREADY DONE, call done" in p for p in seen)
