@@ -350,3 +350,25 @@ def test_a_dead_end_is_never_picked_up_as_work(tmp_path):
                                     "claimed_title": "t"}), kind="deadend")
     assert r.engine._typed_from_due_thread(con) is None
     con.close()
+
+
+def test_a_type_no_tool_can_satisfy_is_reported_as_unreachable():
+    """Found live: `record_deadend` required a structured row that no tool in
+    the instance could write, so the machine failed it twice for a reason that
+    had nothing to do with its ability. Admissible is not the same as
+    reachable, and a menu entry with no route to its own postcondition is A4's
+    unfinishable task wearing a type."""
+    reach = Menu([
+        TaskType(name="cite", required=("id",), identity=("id",), summary="s",
+                 postcondition=lambda *a: (True, ""), satisfied_by=("verify_citation",)),
+        TaskType(name="deadend", required=("subject",), identity=("subject",),
+                 summary="s", postcondition=lambda *a: (True, "")),
+    ])
+    problems = reach.unreachable({"verify_citation", "read_file"})
+    assert len(problems) == 1
+    assert problems[0].startswith("deadend") and "which tool" in problems[0]
+
+    missing = Menu([TaskType(name="cite", required=("id",), identity=("id",),
+                             summary="s", postcondition=lambda *a: (True, ""),
+                             satisfied_by=("record_deadend",))])
+    assert "has none of them" in missing.unreachable({"read_file"})[0]

@@ -71,6 +71,25 @@ class Runner:
             delegate=self.delegate,
         )
 
+    def preflight(self) -> list[str]:
+        """Everything wrong with this instance before it is allowed to run.
+
+        The referee's audit and the menu's reachability check, together. Both
+        exist because a configuration can be internally consistent and still
+        unable to produce anything: a component nothing outside validates, or
+        a task type no tool can complete. Both were found by running, and both
+        are cheap to ask at startup.
+        """
+        problems = []
+        ref = self.cfg.get("referee")
+        if ref is not None:
+            problems += [f"referee: {p}" for p in ref.audit()]
+        menu = self.cfg.get("menu")
+        if menu is not None:
+            tools = (self.cfg.get("agent", {}).get("options", {}) or {}).get("tools") or {}
+            problems += [f"menu: {p}" for p in menu.unreachable(tools)]
+        return problems
+
     # -- housekeeping, outside the cycle -------------------------------------
     def collect(self) -> list[str]:
         """Take in whatever the delegate answered, and close what it closed.

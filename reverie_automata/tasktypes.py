@@ -61,6 +61,14 @@ class TaskType:
     # written for a prose description reads a program as a threat and parks
     # legitimate work. Intent is what a guard should judge.
     payload: tuple[str, ...] = ()
+    # The tools that can actually satisfy this type's postcondition. Declared
+    # rather than inferred, because a menu entry with no route to its own
+    # postcondition is a trap: the work is admissible, the executor tries, and
+    # nothing it can do will ever pass. Found live, twice in one run, on a
+    # `record_deadend` type whose check wanted a structured row that no tool
+    # could write. That is A4's unfinishable task wearing a type, and the fix
+    # is the same shape as `counts_distinct`: make somebody write the sentence.
+    satisfied_by: tuple[str, ...] = ()
 
     def render(self, task: dict) -> str:
         """The instruction the executor receives, generated from the fields.
@@ -134,6 +142,26 @@ class Menu:
             # A check that crashed did not pass. The opposite default would
             # turn every bug in a postcondition into a free done.
             return False, f"the postcondition raised {type(e).__name__}: {e}"
+
+    def unreachable(self, tool_names) -> list[str]:
+        """Types this executor cannot possibly complete, given its toolkit.
+
+        Admissibility is not enough: work must also be REACHABLE. A type whose
+        postcondition no available tool can produce invites the machine to
+        fail forever for a reason that has nothing to do with its ability.
+        """
+        have = set(tool_names or ())
+        out = []
+        for name, t in sorted(self.types.items()):
+            if t.postcondition is None:
+                continue
+            if not t.satisfied_by:
+                out.append(f"{name}: does not say which tool can satisfy its "
+                           "postcondition, so nothing checks that one exists")
+            elif not (set(t.satisfied_by) & have):
+                out.append(f"{name}: needs one of {sorted(t.satisfied_by)} and "
+                           f"this instance has none of them")
+        return out
 
     def schema(self) -> dict[str, Any]:
         """A json schema for one task.
