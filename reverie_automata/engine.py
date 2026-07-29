@@ -477,6 +477,20 @@ class Engine:
         # say (it wrote the task); this is the wrapper deciding who does it,
         # and the reason is quoted from the task's own words so the decision
         # can be argued with later.
+        # Already true before we started? Then there is no work here, and
+        # spending a cycle to discover that is how three false completions and
+        # fifty wasted attempts happened in one run.
+        if self.menu is not None:
+            done_already, why_already = self.menu.already_done(task, self.home)
+            if done_already:
+                if task.get("thread"):
+                    self.store.close_thread(con, task["thread"],
+                                            f"already satisfied: {why_already}")
+                events.emit(self.home, "already_done", cycle=ts, task=tid,
+                            why=why_already[:200], what=what[:150])
+                return {"id": tid, "status": "skipped", "what": what,
+                        "verify": f"already true before this cycle: {why_already}"}
+
         where, why = route(task, self.cfg)
         if where == DELEGATE and self.delegate is not None:
             job_id, note = self.delegate.file(task, cycle=ts)

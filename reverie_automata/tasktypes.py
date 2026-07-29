@@ -126,6 +126,30 @@ class Menu:
         t = self.get(task)
         return t.render(task) if t else str(task.get("what", ""))
 
+    def already_done(self, task: dict, home) -> tuple[bool, str]:
+        """Is this task's postcondition ALREADY true, before any work?
+
+        The dual of the postcondition, and it should have been written the same
+        day. Measured over 140 cycles: three completions, all of them tasks
+        asking for a state that already held, one of them a receipt describing
+        its own failure and graded done because the check read the world as it
+        is rather than what this cycle changed.
+
+        Fifty of that run's seventy-two attempts were the repetition guard
+        watching the machine re-establish something true. Work that is already
+        finished is not work; the thread closes and no cycle is spent.
+        """
+        t = self.get(task)
+        if t is None or t.postcondition is None:
+            return False, ""
+        try:
+            ok, why = t.postcondition(task, "", home)
+        except Exception:  # noqa: BLE001
+            # A precondition that cannot be evaluated must not claim the work
+            # is done. Unknown is not finished.
+            return False, ""
+        return (True, why) if ok else (False, why)
+
     def check(self, task: dict, receipt: str, home) -> tuple[bool, str]:
         """The postcondition, asked of the world after the claim.
 

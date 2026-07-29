@@ -372,3 +372,56 @@ def test_a_type_no_tool_can_satisfy_is_reported_as_unreachable():
                              summary="s", postcondition=lambda *a: (True, ""),
                              satisfied_by=("record_deadend",))])
     assert "has none of them" in missing.unreachable({"read_file"})[0]
+
+
+def test_a_task_whose_postcondition_already_holds_is_not_work(tmp_path):
+    """A18. Over 140 cycles the only three completions were tasks asking for a
+    state that already held, and one of them was a receipt describing its own
+    failure, graded done because the check read the world as it is rather than
+    what the cycle changed."""
+    import json as _json
+    import time as _time
+    from reverie_automata.adapters import agents
+    from reverie_automata.config import Config
+    from reverie_automata.runner import Runner
+    from reverie_automata.tasktypes import Menu, TaskType
+
+    DONE_ALREADY = TaskType(
+        name="ensure", required=("subject",), identity=("subject",),
+        summary="make it so", satisfied_by=("tool",),
+        postcondition=lambda t, r, h: (True, "it was already so"))
+
+    class Eager:
+        name = "eager"
+
+        def __init__(self, options=None):
+            pass
+
+        def complete(self, s, u, *, max_tokens=1000):
+            return ('<<PLAN>>{"tasks": [{"id": "t1", "type": "ensure",'
+                    ' "subject": "x", "why": "w", "risk": "SAFE"}],'
+                    ' "do_nothing": false}<<END>>')
+
+        def run_session(self, d, **kw):
+            # The learn phase legitimately runs a session; only the EXECUTE
+            # directive must never appear, because the work was already done.
+            assert "Do exactly this one task" not in d, "the executor was reached"
+            return "<<JOURNAL>>nothing to do<<END>>"
+
+    agents.REGISTRY["eager"] = Eager
+    cfg = Config()
+    cfg.data.update({"home": str(tmp_path / "h"), "trigger": "work",
+                     "window": {"start": 0, "end": 0}, "idle_minutes": 0,
+                     "min_gap_minutes": 0, "max_cycles_per_day": 9,
+                     "planner": {"backend": "eager"}, "agent": {"backend": "eager"},
+                     "menu": Menu([DONE_ALREADY])})
+    r = Runner(cfg, last_input_ts=lambda: _time.time() - 7200, is_available=lambda: True)
+    con = r.store.connect()
+    r.store.add_thread(con, "something", "", kind="work")
+    con.close()
+
+    r.tick()
+    out = _json.loads(
+        (sorted((Path(cfg["home"]) / "cycles").glob("*"))[-1] / "outcome.json").read_text())
+    assert out["ledger"][0]["status"] == "skipped"
+    assert "already true before this cycle" in out["ledger"][0]["verify"]
