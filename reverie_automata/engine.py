@@ -552,6 +552,26 @@ class Engine:
         con.execute("INSERT INTO tasks (cycle_ts, task_id, what, mode, risk, status, started_at) "
                     "VALUES (?,?,?,?,?,'started',?)", (ts, tid, what, task.get("mode"), final, time.time()))
         con.commit()
+        # The typed task itself, on disk, before the session that must satisfy
+        # it. Two reasons, and the second is the load-bearing one.
+        #
+        # For the record: the fields were only ever recoverable from the plan
+        # blob, so reading what a cycle was actually asked to do meant parsing
+        # the planner's output rather than reading the task.
+        #
+        # For the tools: a task type's fields are known to the harness and were
+        # nonetheless required to travel through the executor, which had to
+        # retype them into a tool call. That is the one operation this class of
+        # model has been measured unable to do. Watched live, an executor that
+        # had just computed the right answer wrote the source filename back
+        # with a letter missing and dropped three fields on the way. A tool can
+        # now read the task it is being used to satisfy, and ask the model only
+        # for what the harness cannot know.
+        try:
+            (cdir / f"task_{tid}.json").write_text(
+                json.dumps(task, ensure_ascii=False, indent=1), encoding="utf-8")
+        except (OSError, TypeError):
+            pass  # the record is worth having and never worth a crash
         if task.get("mode") == "text":
             raw = self.planner.complete("", P.EXECUTE_TEXT_ONLY.format(context="", what=what), max_tokens=1200)
         else:
