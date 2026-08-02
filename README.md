@@ -32,7 +32,7 @@ A loop with taste. Point it at any coding agent you already run.
 
 **reverie-automata:** the same idle slot, but the agent looks first. Index is fresh, nothing queued, no new input since it last ran? It records "nothing worth doing" and sleeps. Sees the flaky test you left? It reproduces it, fixes it, leaves a one-line note, and files anything risky for your approval before touching it.
 
-The difference isn't the schedule. It's that one of them *thinks* before it acts.
+Same slot, same budget. One of them looks first.
 
 ## How it works
 
@@ -75,6 +75,19 @@ agent:
 | `pi` | configurable `bin` + subcommand |
 | `mock` | deterministic, offline, for the demo and tests |
 
+If the brain is a model you serve yourself rather than an agent someone else
+ships, two backends drive it directly:
+
+| backend | driven by |
+|---|---|
+| `local_server` | an OpenAI-shaped endpoint (`llama.cpp` and friends), planning under a JSON schema |
+| `local_agent` | a tool-using loop for that same small brain: one call per turn, a closed enum of tools, one string argument |
+
+Both exist because a small quantized model understands the task and then
+fails at the mechanics, inventing a tool that does not exist or writing
+something that is nearly JSON. A schema makes malformed output impossible
+rather than unlikely. Details in [`docs/adapters.md`](docs/adapters.md).
+
 Binaries and flags come from config, because CLIs move fast. A new backend is a ~15-line subclass, never a fork. Same for approval **transports** (`stdout`, `telegram`, your own Slack or webhook) and context **sources** (files, shell probes, marker-scanned repos, your own inbox).
 
 ## Quickstart
@@ -84,7 +97,7 @@ No key required. The demo runs on the deterministic mock backend.
 ```bash
 git clone https://github.com/freeze1999/reverie-automata && cd reverie-automata
 python examples/demo.py       # one full plan → execute → learn cycle
-python -m pytest -q            # 16 tests, standard-library core (pytest + pyyaml for the suite)
+python -m pytest -q            # 203 tests, standard-library core (pytest + pyyaml for the suite)
 ```
 
 Point it at a real agent and a real project:
