@@ -99,14 +99,35 @@ class LocalServer:
         self.close_tag = o.get("close_tag", "<<END>>")
 
     # -- introspection -----------------------------------------------------
-    def server_context(self) -> int | None:
-        """The window the server ACTUALLY holds, read back from /props."""
+    def _props(self) -> dict[str, Any]:
         try:
             with urllib.request.urlopen(self.base + "/props", timeout=15) as r:
                 d = json.loads(r.read())
-            return (d.get("default_generation_settings") or {}).get("n_ctx")
+            return d if isinstance(d, dict) else {}
         except Exception:
-            return None
+            return {}
+
+    def server_context(self) -> int | None:
+        """The window the server ACTUALLY holds, read back from /props."""
+        return (self._props().get("default_generation_settings") or {}).get("n_ctx")
+
+    def server_identity(self) -> dict[str, Any]:
+        """Which brain is actually answering, for the cycle record.
+
+        A harness that records what the machine DID and never what the machine
+        WAS cannot compare two of its own runs. Measured the hard way: a unit
+        nobody had read swapped the model and quartered the window at a reboot,
+        eight days of cycles were graded against the new brain as though it were
+        the old one, and the swap was reconstructed afterwards from a systemd
+        file and a GPU size rather than from the record. The independent
+        variable belongs in the log with everything else.
+        """
+        d = self._props()
+        if not d:
+            return {}
+        return {"model_path": d.get("model_path"), "alias": d.get("model_alias"),
+                "n_ctx": (d.get("default_generation_settings") or {}).get("n_ctx"),
+                "slots": d.get("total_slots"), "build": d.get("build_info")}
 
     # -- interface ---------------------------------------------------------
     def complete(self, system, user, *, max_tokens=1000) -> str:

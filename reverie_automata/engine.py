@@ -445,6 +445,7 @@ class Engine:
                           blast_radius=touched)
         (cdir / "outcome.json").write_text(json.dumps({
             "ts": ts, "grade": grade, "plan": plan, "ledger": ledger,
+            "brain": self._brain(),
             "blast_radius": touched, "inbox_consumed": n_inbox,
             "plan_complaints": plan_complaints, "false_no_op": false_no_op,
             "referee_before": before, "referee_moved": moved,
@@ -455,6 +456,48 @@ class Engine:
                     lessons=[f"{l.situation} -> {l.action} -> {l.outcome}" for l in lessons],
                     journal=journal[:600])
         return outcome
+
+    # -- which brain answered ------------------------------------------------
+    def _brain(self) -> dict:
+        """The executor's own identity, stamped into every cycle record.
+
+        Every gate in this engine grades what the machine DID. None of them
+        record what the machine WAS, so two runs of the same instance were
+        never comparable and nobody could tell. It cost eight days: a unit at
+        boot replaced the model and cut the window to a quarter, the cycles
+        after it were read against the reports of the cycles before it, and the
+        swap was only found by reading a systemd file weeks later.
+
+        A changed brain is announced loudly and does not stop the cycle. A
+        harness that refuses to run is a harness that stops recording, and the
+        record is the thing being protected. Introspection is best effort:
+        a backend that cannot say who it is says nothing, and never raises.
+        """
+        for src in (self.agent, self.planner):
+            probe = getattr(src, "server_identity", None)
+            if probe is None:
+                continue
+            try:
+                now = probe()
+            except Exception:
+                continue
+            if not now:
+                continue
+            seen = self.home / "brain.json"
+            try:
+                was = json.loads(seen.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                was = None
+            if was and was != now:
+                events.emit(self.home, "brain_changed", was=was, now=now)
+            if was != now:
+                try:
+                    seen.write_text(json.dumps(now, ensure_ascii=False, indent=1),
+                                    encoding="utf-8")
+                except OSError:
+                    pass  # the stamp in the cycle record is the durable copy
+            return now
+        return {}
 
     # -- one task -----------------------------------------------------------
     def _do_task(self, con, ts, cdir, task, text_only) -> dict:
