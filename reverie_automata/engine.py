@@ -32,8 +32,47 @@ from .types import ActionClass, Lesson, Outcome, Risk
 
 
 def _grab(tag, text):
-    m = re.search(r"<<%s>>(.*?)<<END>>" % tag, text, re.S)
+    """One tagged block, ending at <<END>>, the next tag, or the end of text.
+
+    A closing tag the model forgot is not a block the model did not write. The
+    first LEARN output this engine ever collected opened four blocks and closed
+    one, at the very bottom, and the strict form read that as a single enormous
+    journal and zero lessons. The content was correct and specific and all of it
+    was thrown away on punctuation.
+
+    The rule everywhere else in this project applies to parsing too: the harness
+    absorbs the executor's formatting instead of depending on it.
+    """
+    m = re.search(r"<<%s>>(.*?)(?:<<END>>|(?=<<[A-Z_]+>>)|\Z)" % tag, text, re.S)
     return m.group(1).strip() if m else ""
+
+
+def _grab_all(tag, text):
+    """Every block with this tag, same forgiving terminator."""
+    return [m.strip() for m in re.findall(
+        r"<<%s>>(.*?)(?:<<END>>|(?=<<[A-Z_]+>>)|\Z)" % tag, text, re.S) if m.strip()]
+
+
+# situation -> action -> outcome, however the model chose to write it. The
+# arrow form is what the prompt asks for; the labelled form is what a model
+# reaching for a report format produces instead, and it carries exactly the
+# same three fields.
+_LABELLED = re.compile(
+    r"situation\s*:\s*(.+?)\s*(?:^|\n)\s*action\s*:\s*(.+?)\s*(?:^|\n)\s*"
+    r"(?:observed\s+outcome|outcome|observed)\s*:\s*(.+)",
+    re.S | re.I)
+
+
+def _lesson_parts(body: str) -> list[str] | None:
+    parts = [x.strip() for x in re.split(r"->", body, maxsplit=2)]
+    if len(parts) == 3 and all(parts):
+        return parts
+    m = _LABELLED.search(body)
+    if m:
+        parts = [x.strip().rstrip(".") for x in m.groups()]
+        if all(parts):
+            return parts
+    return None
 
 
 def parse_plan(raw: str) -> dict | None:
@@ -394,9 +433,8 @@ class Engine:
         (cdir / "learn.txt").write_text(p3, encoding="utf-8")
         journal = _grab("JOURNAL", p3) or p3[:1200]
         review = _grab("REVIEW", p3)
-        lessons = [Lesson(*[x.strip() for x in re.split(r"->", l, maxsplit=2)])
-                   for l in re.findall(r"<<LESSON>>(.*?)<<END>>", p3, re.S)
-                   if len(re.split(r"->", l, maxsplit=2)) == 3]
+        lessons = [Lesson(*parts) for parts in
+                   (_lesson_parts(l) for l in _grab_all("LESSON", p3)) if parts]
 
         # The post snapshot happens after everything, including LEARN. LEARN no
         # longer holds tools and so should not be able to move anything, which
