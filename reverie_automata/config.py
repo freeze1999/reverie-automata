@@ -27,6 +27,11 @@ DEFAULTS: dict[str, Any] = {
     # --- budget: heavy by design, but bounded ---
     "budget": {"floor": 0.0, "soft": 0.0, "max_per_cycle": 1.0},
     "max_tool_turns": {"plan": 25, "execute": 40, "learn": 15},
+    # LEARN is one text completion, not a tool loop, so it is budgeted in
+    # tokens. It has to fit a journal, a self-review and up to three lessons;
+    # cut too fine, the lessons are the part that falls off the end, and the
+    # lessons are the only part of the phase anything downstream reads.
+    "learn_max_tokens": 1500,
 
     # --- what the agent gets to see each cycle (harvest) ---
     "sources": [],                         # list of source specs; see adapters/sources

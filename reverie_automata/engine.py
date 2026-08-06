@@ -368,15 +368,29 @@ class Engine:
 
         # --- LEARN ---
         ledger_txt = "\n".join(f"- {e['id']} [{e['status']}] {e['what'][:80]}" for e in ledger) or "(nothing to do)"
-        p3 = self.agent.run_session(P.LEARN.format(context=context, ledger=ledger_txt),
-                                    cwd=str(self.home), env=self._cycle_env(ts),
-                                    turn_cap=self.cfg["max_tool_turns"]["learn"])
-        # The LEARN phase holds real tools and its transcript was the one thing
-        # a cycle never wrote down. That gap was found the hard way: a file
-        # appeared in the working tree during a cycle, and the only phase whose
-        # tool calls were not on disk was this one, so the question of what
-        # created it could not be answered from the record at all. Every phase
-        # that can touch the world leaves its transcript.
+        # LEARN is text. It was routed through the tool-running agent for most
+        # of this engine's life, and that silently deleted the entire phase:
+        # `run_session` does not return what the model wrote. It drives a loop
+        # under a forced step schema and returns a string it composes itself
+        # from the loop's verdict and the transcript, so the only blocks it can
+        # ever emit are RESULT and VERIFY. The prompt below asks for JOURNAL,
+        # REVIEW and LESSON; none of them had a path into the return value, and
+        # the greps under this call were searching a string that structurally
+        # could not contain them. Over one thousand three hundred cycles that
+        # produced zero lessons and one apparent review, and the review was a
+        # long `done` argument interpolated into VERIFY rather than a review at
+        # all. Nobody noticed, because a phase that returns nothing looks
+        # exactly like a phase with nothing to say.
+        #
+        # A review does not need tools. It needs the cycle it is reviewing,
+        # which is already in the prompt. Giving it tools was what handed the
+        # phase to an adapter whose contract outranked the prompt's.
+        p3 = self.planner.complete("", P.LEARN.format(context=context, ledger=ledger_txt),
+                                   max_tokens=self.cfg["learn_max_tokens"])
+        # Every phase leaves its transcript, tools or no tools. That rule was
+        # written after a file appeared in the working tree during a cycle and
+        # the only phase whose output was not on disk was this one, so what
+        # created it could not be answered from the record at all.
         (cdir / "learn.txt").write_text(p3, encoding="utf-8")
         journal = _grab("JOURNAL", p3) or p3[:1200]
         review = _grab("REVIEW", p3)
@@ -384,9 +398,10 @@ class Engine:
                    for l in re.findall(r"<<LESSON>>(.*?)<<END>>", p3, re.S)
                    if len(re.split(r"->", l, maxsplit=2)) == 3]
 
-        # Tasks and the LEARN session both hold real tools, so the post
-        # snapshot happens after both; anything in the watch set that changed,
-        # appeared, or vanished during the cycle lands in the outcome.
+        # The post snapshot happens after everything, including LEARN. LEARN no
+        # longer holds tools and so should not be able to move anything, which
+        # is a reason to keep watching it rather than to stop: a watch set that
+        # only covers the phases expected to write is not a watch set.
         touched = blast.diff(pre, blast.snapshot(self.cfg["protected_paths"]))
 
         if self.referee is not None:
