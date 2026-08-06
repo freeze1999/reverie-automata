@@ -63,16 +63,31 @@ _LABELLED = re.compile(
     re.S | re.I)
 
 
+# The prompt's own placeholder words. A model with nothing to report copies the
+# example back rather than omitting the block, and `situation -> action ->
+# observed outcome` parses perfectly: three fields, all non-empty, structurally
+# indistinguishable from a real lesson. It was recorded as one on the first
+# cycle after the parser was relaxed. An echo of the question is not an answer,
+# and a false lesson is worse than no lesson because it reads as a finding.
+_ECHO = {"situation", "action", "outcome", "observed", "observed outcome",
+         "the outcome you actually observed", "none", "n/a", "na", "nothing",
+         "up to three", "omit if none", "up to three; omit if none", "..."}
+
+
 def _lesson_parts(body: str) -> list[str] | None:
-    parts = [x.strip() for x in re.split(r"->", body, maxsplit=2)]
-    if len(parts) == 3 and all(parts):
+    def clean(xs):
+        out = [x.strip().rstrip(".").strip() for x in xs]
+        if not all(out):
+            return None
+        if any(x.lower().strip("()") in _ECHO for x in out):
+            return None
+        return out
+
+    parts = clean(re.split(r"->", body, maxsplit=2)) if body.count("->") >= 2 else None
+    if parts:
         return parts
     m = _LABELLED.search(body)
-    if m:
-        parts = [x.strip().rstrip(".") for x in m.groups()]
-        if all(parts):
-            return parts
-    return None
+    return clean(m.groups()) if m else None
 
 
 def parse_plan(raw: str) -> dict | None:

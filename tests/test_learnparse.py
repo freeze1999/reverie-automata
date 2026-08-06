@@ -82,6 +82,19 @@ def test_a_closed_block_is_unaffected():
     assert _grab("REVIEW", text) == "two"
 
 
+def test_the_prompt_echoed_back_is_not_a_lesson():
+    """Measured live on the first cycle after the parser was relaxed. A model
+    with nothing to report copies the example instead of omitting the block,
+    and the copy parses perfectly: three fields, all non-empty. A false lesson
+    is worse than no lesson, because it reads as a finding."""
+    assert _lesson_parts("situation -> action -> observed outcome") is None
+    assert _lesson_parts("situation -> action -> the outcome you actually observed") is None
+    assert _lesson_parts("Situation -> Action -> Outcome") is None
+    assert _lesson_parts("None") is None
+    assert _lesson_parts("(up to three; omit if none)") is None
+    assert _lesson_parts("a stale source -> reread first -> none") is None
+
+
 def test_prose_that_is_not_a_lesson_is_still_refused():
     """Forgiving about shape is not the same as accepting anything. A lesson
     missing a field is worse than no lesson: it reads as a finding."""
