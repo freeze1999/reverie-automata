@@ -192,6 +192,20 @@ class Store:
         return con.execute(f"SELECT id, kind, title FROM threads WHERE status='open' "
                            f"ORDER BY {THREAD_PRIORITY}, id LIMIT ?", (limit,)).fetchall()
 
+    def last_task_outcomes(self, con, limit: int = 6):
+        """What became of the most recent tasks, newest first.
+
+        So that a cycle can be told what happened to the last one. Without it a
+        task that never ran is indistinguishable, from inside, from a task that
+        ran and achieved nothing: over one night a machine proposed the same
+        work 218 times, had every attempt parked before it started, and spent
+        every review confidently blaming a cause that was not the cause,
+        because nothing ever told it what had actually become of its own work.
+        """
+        return con.execute(
+            "SELECT cycle_ts, task_id, what, status, result FROM tasks "
+            "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
     def has_open(self, con, kind: str) -> bool:
         return con.execute("SELECT 1 FROM threads WHERE kind=? AND status='open' LIMIT 1", (kind,)).fetchone() is not None
 

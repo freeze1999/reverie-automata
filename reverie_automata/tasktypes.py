@@ -69,6 +69,19 @@ class TaskType:
     # could write. That is A4's unfinishable task wearing a type, and the fix
     # is the same shape as `counts_distinct`: make somebody write the sentence.
     satisfied_by: tuple[str, ...] = ()
+    # What this KIND of work risks, decided once by whoever wrote the menu.
+    #
+    # It used to be a required field on the task, filled in by the planner, and
+    # the planner is not competent to answer it. Measured over one night: a
+    # read-only identifier lookup was labelled RISKY 218 consecutive times, and
+    # since a self-declared RISKY is enough to park a task, the machine spent
+    # the night filing approvals against itself into a queue nobody opens. It
+    # completed nothing, and its own reviews blamed a dead-end citation,
+    # because the real reason was never shown to it.
+    #
+    # Risk is a property of the shape of the work. A type that reads a paper's
+    # metadata is safe every time it runs, whatever the model thinks that day.
+    risk: str = "SAFE"
 
     def render(self, task: dict) -> str:
         """The instruction the executor receives, generated from the fields.

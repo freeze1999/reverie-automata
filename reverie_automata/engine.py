@@ -604,6 +604,26 @@ class Engine:
             return now
         return {}
 
+    def _note_task(self, con, ts, tid, what, status, why) -> None:
+        """Put a task that never ran into the ledger anyway, with its reason.
+
+        Parked and skipped tasks used to return before the ledger row was
+        written, so from the record's point of view they had not happened at
+        all. Nothing downstream could report them and nothing could carry them
+        into the next cycle. A refusal that leaves no trace is the same shape
+        as the work simply not existing, and the machine cannot tell those
+        apart any more than we could.
+        """
+        try:
+            con.execute("INSERT INTO tasks (cycle_ts, task_id, what, mode, risk, "
+                        "status, started_at, ended_at, result) "
+                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        (ts, tid, what, "", "", status, time.time(), time.time(),
+                         str(why)[:500]))
+            con.commit()
+        except Exception:  # noqa: BLE001
+            pass  # the ledger entry is worth having and never worth a crash
+
     # -- one task -----------------------------------------------------------
     def _do_task(self, con, ts, cdir, task, text_only) -> dict:
         tid = str(task.get("id", "?"))
@@ -614,13 +634,39 @@ class Engine:
         what = (self.menu.render(task) if self.menu and self.menu.get(task)
                 else task.get("what", ""))
         wrisk, wpat = self._wrapper_risk(task)
-        final = "RISKY" if "RISKY" in (wrisk, str(task.get("risk", "SAFE")).upper()) else "SAFE"
+        # Who is allowed to call this risky. For TYPED work: the menu, which
+        # decided once for the whole kind, and the wrapper, which reads the
+        # task's stated intent. Not the planner. It filled that field with
+        # RISKY 218 times running for a read-only lookup, and a self-declared
+        # RISKY parks the task, so the machine spent a night filing approvals
+        # against itself into a queue nobody opens, completed nothing, and
+        # blamed something else in every review because nothing told it why.
+        #
+        # Untyped work keeps the old rule: with no menu entry, the planner's
+        # word is the only signal there is, and an unclassified task should
+        # stop rather than run.
+        declared = str(task.get("risk", "SAFE")).upper()
+        t = self.menu.get(task) if self.menu is not None else None
+        if t is not None:
+            typed_risk = str(getattr(t, "risk", "SAFE")).upper()
+            final = "RISKY" if "RISKY" in (wrisk, typed_risk) else "SAFE"
+            if declared == "RISKY" and final == "SAFE":
+                # Recorded rather than obeyed, so the habit stays measurable.
+                events.emit(self.home, "risk_overridden", cycle=ts, task=tid,
+                            type=t.name, declared=declared, applied=final)
+        else:
+            final = "RISKY" if "RISKY" in (wrisk, declared) else "SAFE"
         if final == "RISKY":
             self._file_approval(con, ts, task, task.get("risk_reason") or wpat)
             self.store.add_thread(con, f"parked (awaiting approval): {what[:100]}",
                                   json.dumps(task, ensure_ascii=False), kind="approval",
                                   created_cycle=ts, defer=True, unique=True)
-            return {"id": tid, "status": "parked", "what": what}
+            why = (f"parked awaiting approval, because this task was classified "
+                   f"RISKY ({task.get('risk_reason') or wpat or 'no reason given'}). "
+                   "It was never run. Approvals are opened by a person and "
+                   "nothing happens until one is.")
+            self._note_task(con, ts, tid, what, "parked", why)
+            return {"id": tid, "status": "parked", "what": what, "why": why}
         # Routing, before any work is attempted. The model has already had its
         # say (it wrote the task); this is the wrapper deciding who does it,
         # and the reason is quoted from the task's own words so the decision
@@ -636,8 +682,10 @@ class Engine:
                                             f"already satisfied: {why_already}")
                 events.emit(self.home, "already_done", cycle=ts, task=tid,
                             why=why_already[:200], what=what[:150])
+                why = f"already true before this cycle: {why_already}"
+                self._note_task(con, ts, tid, what, "skipped", why)
                 return {"id": tid, "status": "skipped", "what": what,
-                        "verify": f"already true before this cycle: {why_already}"}
+                        "verify": why, "why": why}
 
         where, why = route(task, self.cfg)
         if where == DELEGATE and self.delegate is not None:
@@ -672,8 +720,9 @@ class Engine:
                     self.store.close_thread(con, task["thread"], note)
                 events.emit(self.home, "solved", cycle=ts, task=tid,
                             note=note, what=what[:200])
+                self._note_task(con, ts, tid, what, "skipped", str(note))
                 return {"id": tid, "status": "skipped", "what": what,
-                        "verify": note}
+                        "verify": note, "why": str(note)}
             if str(note).startswith("defer:") or "concurrency cap" in str(note):
                 self.store.add_thread(con, f"waiting on a free worker: {what[:80]}",
                                       json.dumps(task, ensure_ascii=False),

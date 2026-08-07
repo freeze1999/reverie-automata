@@ -58,7 +58,31 @@ class Harvester:
             (0, "memory (lessons)", memory),
             (0, "recent lessons", "\n".join(f"- {s} -> {a} -> {o}" for s, a, o in lessons) or "(none)"),
             (0, "open threads (the work queue)", "\n".join(f"#{i} [{k}] {t}" for i, k, t in threads) or "(empty)"),
+            # What became of the last few tasks, including the ones that never
+            # ran. This block is the difference between a machine that knows
+            # its work was refused and one that only knows nothing happened.
+            # Over one night the second kind proposed identical work 218 times,
+            # had every attempt parked before it started, and wrote a confident
+            # and wrong diagnosis every cycle, because the true reason was
+            # never anywhere it could see.
+            (1, "what became of your last tasks", self._recent_outcomes(con)),
         ]
+
+    def _recent_outcomes(self, con) -> str:
+        try:
+            rows = self.store.last_task_outcomes(
+                con, int(self.cfg.get("recent_outcomes", 6) or 6))
+        except Exception:  # a context block must never crash a cycle
+            return "(unavailable)"
+        if not rows:
+            return "(nothing has been attempted yet)"
+        out = []
+        for ts, tid, what, status, result in rows:
+            line = f"- {ts} {tid} [{status}] {str(what or '')[:90]}"
+            if result:
+                line += f"\n    -> {str(result)[:220]}"
+            out.append(line)
+        return "\n".join(out)
 
     def build(self, con, ctx: dict | None = None) -> tuple[str, dict]:
         ctx = ctx or {}
