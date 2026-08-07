@@ -36,6 +36,10 @@ DEFAULTS: dict[str, Any] = {
     # --- what the agent gets to see each cycle (harvest) ---
     "sources": [],                         # list of source specs; see adapters/sources
     "harvest_max_tokens": 10000,
+    # The lesson file rides at priority 0, where the trimmer cannot reach it,
+    # so it is capped here instead. Uncapped it reached 64,758 characters in
+    # one night and took every planning call over the window.
+    "memory_max_chars": 6000,
     "max_tasks_per_cycle": 8,              # small brains should run this at 1
     "allow_text_tasks": True,              # False = every claim must come from a tool
 

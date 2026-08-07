@@ -36,10 +36,23 @@ class Harvester:
         """(priority, label, text). Priority 0 = never trimmed."""
         lessons = con.execute("SELECT situation, action, outcome FROM lessons ORDER BY id DESC LIMIT 5").fetchall()
         threads = self.store.open_threads(con, limit=40)
+        # Bounded, and it has to be. Priority 0 means the trimmer will not
+        # touch this block, so an append-only file at priority 0 is a context
+        # overflow with a fuse on it. It burned down: the lesson channel was
+        # repaired, immediately produced three near-identical lessons a cycle,
+        # and inside a night MEMORY.md reached 64,758 characters, roughly
+        # sixteen thousand tokens, on a sixteen-thousand-token window. Every
+        # planning call then returned HTTP 400 and every cycle was graded as an
+        # idle one. A block that cannot be trimmed must be one that cannot grow.
         try:
             memory = self.memory_path.read_text(encoding="utf-8")
         except Exception:
             memory = "(no lessons yet)"
+        keep = int(self.cfg.get("memory_max_chars", 6000) or 6000)
+        if len(memory) > keep:
+            cut = memory[-keep:]
+            memory = ("(older lessons elided; the most recent are kept)\n"
+                      + cut[cut.index("\n") + 1:] if "\n" in cut else cut)
         return [
             (0, "opening ritual", "What did I learn last cycle / today? Answer before planning."),
             (0, "memory (lessons)", memory),

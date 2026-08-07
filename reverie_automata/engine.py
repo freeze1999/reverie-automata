@@ -31,6 +31,19 @@ from .routing import DELEGATE, route
 from .types import ActionClass, Lesson, Outcome, Risk
 
 
+def _transport_failed(raw: str) -> bool:
+    """Did the model never answer, as opposed to answering badly?
+
+    The adapters return their failures as text beginning with a bracketed
+    marker, because a backend that raises kills a cycle and a cycle that dies
+    leaves no record. The cost of that choice is that silence looks like speech
+    to everything downstream, so it has to be recognised explicitly exactly
+    once, here.
+    """
+    s = (raw or "").lstrip()
+    return s.startswith("[local server error") or s.startswith("[transport error")
+
+
 def _grab(tag, text):
     """One tagged block, ending at <<END>>, the next tag, or the end of text.
 
@@ -336,7 +349,24 @@ class Engine:
         p1 = self.planner.complete("", prompt,
                                    max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
         (cdir / "plan.txt").write_text(p1, encoding="utf-8")
-        plan = parse_plan(p1) or {"do_nothing": True, "do_nothing_reason": "unparseable plan", "tasks": []}
+        # A brain that never answered is not a machine that chose to rest.
+        #
+        # Found the hard way. The planning context outgrew the server's window,
+        # every call came back HTTP 400, and the error string was written into
+        # plan.txt, failed to parse, and became `do_nothing` with the reason
+        # "unparseable plan". From the outside those cycles were indistinguish-
+        # able from idle ones: graded F, no alarm, hours of them. The engine
+        # was reporting a machine with nothing to do while the machine was
+        # unreachable, which is the exact confusion F7 is about, one layer down
+        # and about ourselves.
+        unreachable = _transport_failed(p1)
+        if unreachable:
+            events.emit(self.home, "planner_unreachable", cycle=ts, detail=p1[:300])
+            plan = {"do_nothing": True, "tasks": [],
+                    "do_nothing_reason": f"THE PLANNER NEVER ANSWERED: {p1[:200]}"}
+        else:
+            plan = parse_plan(p1) or {"do_nothing": True, "tasks": [],
+                                      "do_nothing_reason": "unparseable plan"}
         # A schema can guarantee the plan's shape; only the engine can tell
         # whether "nothing to do" is an honest lazy day or a missed shift, so
         # the eligibility answer comes from here and never from the model.
@@ -348,6 +378,13 @@ class Engine:
             max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)),
             allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)),
             menu=self.menu, ruled_out=self._ruled_out(con))
+        if unreachable:
+            # It said nothing because it was never asked. Whatever the
+            # validator concluded about that silence is not about the machine,
+            # and `false_no_op` in particular would blame it for a lazy day it
+            # did not take.
+            plan_complaints = [f"the planner never answered: {p1[:200]}"]
+            false_no_op = False
         # A guard that only objects is not a floor. Watched live: with a
         # standing order open and due, the planner declared the program "at a
         # stalemate with no actionable path forward", the false-no-op check
@@ -757,14 +794,38 @@ class Engine:
         return dict(os.environ, REVERIE_CYCLE=ts, REVERIE_HOME=str(self.home))
 
     def _append_memory(self, lessons):
+        """Append what is new, where new means more than not byte-identical.
+
+        The exact-match guard here was the whole defence, and a model that
+        restates one observation three ways defeats it without trying. Measured
+        over one night: 522 recorded lessons, three a cycle, every one of them
+        the same sentence about the same blocked citation with the clauses
+        reordered. Nothing was learned twice; it was written down 522 times.
+
+        So the comparison is on the shape of the situation rather than its
+        wording. Cheap, and it does not need to be clever: an exact restatement
+        with a synonym swapped is still worth one line, not three.
+        """
         if not lessons:
             return
+
+        def key(text: str) -> str:
+            return " ".join(sorted(set(
+                w for w in "".join(c.lower() if c.isalnum() else " " for c in text).split()
+                if len(w) > 3)))[:400]
+
         try:
             self.memory_path.parent.mkdir(parents=True, exist_ok=True)
+            have = (self.memory_path.read_text(encoding="utf-8")
+                    if self.memory_path.exists() else "")
+            seen = {key(l) for l in have.splitlines() if l.strip()}
             with open(self.memory_path, "a", encoding="utf-8") as f:
                 for l in lessons[:3]:
                     line = f"- {l.situation} -> {l.action} -> {l.outcome}"
-                    if line not in (self.memory_path.read_text() if self.memory_path.exists() else ""):
-                        f.write(line + "\n")
+                    k = key(line)
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    f.write(line + "\n")
         except Exception:
             pass
