@@ -64,6 +64,10 @@ class LocalServer:
         o = dict(options or {})
         self.base = str(o.get("base_url", "http://127.0.0.1:8080")).rstrip("/")
         self.model = o.get("model", "local")
+        # Declared, for endpoints that cannot be asked. A hosted API has no
+        # /props, and a window nobody recorded is how eight days of cycles were
+        # graded against a brain the record could not name.
+        self.n_ctx = o.get("n_ctx")
         self.temperature = float(o.get("temperature", 0.6))
         self.thinking = bool(o.get("thinking", False))
         self.timeout_s = int(o.get("timeout_s", 600))
@@ -123,11 +127,17 @@ class LocalServer:
         variable belongs in the log with everything else.
         """
         d = self._props()
-        if not d:
-            return {}
-        return {"model_path": d.get("model_path"), "alias": d.get("model_alias"),
-                "n_ctx": (d.get("default_generation_settings") or {}).get("n_ctx"),
-                "slots": d.get("total_slots"), "build": d.get("build_info")}
+        if d:
+            return {"model_path": d.get("model_path"), "alias": d.get("model_alias"),
+                    "n_ctx": (d.get("default_generation_settings") or {}).get("n_ctx"),
+                    "slots": d.get("total_slots"), "build": d.get("build_info")}
+        # A hosted endpoint has no /props, and returning nothing there would
+        # put the record back where it was before the stamp existed: unable to
+        # say what produced a cycle. What is knowable without introspection is
+        # still worth writing down, so the configured identity is reported and
+        # marked as configured rather than observed.
+        return {"model_path": self.base, "alias": self.model,
+                "n_ctx": self.n_ctx, "slots": None, "build": "configured"}
 
     # -- interface ---------------------------------------------------------
     def complete(self, system, user, *, max_tokens=1000) -> str:

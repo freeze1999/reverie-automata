@@ -152,3 +152,31 @@ def test_the_stamp_is_never_inferred_from_a_stale_file(tmp_path):
     Scripted.raises = True
     r.tick()
     assert _outcomes(r)[-1]["brain"] == {}, "a stale file was passed off as a reading"
+
+
+def test_a_hosted_endpoint_still_names_itself(tmp_path):
+    """A remote API has no /props. Returning nothing there would put the record
+    back where it was before the stamp existed: unable to say what produced a
+    cycle, which is the defect the stamp was written for."""
+    from reverie_automata.adapters.local_server import LocalServer
+
+    s = LocalServer({"base_url": "https://api.example.com", "model": "big-model",
+                     "n_ctx": 65536, "api_key": "x"})
+    s._props = lambda: {}          # no introspection, as with a hosted API
+    got = s.server_identity()
+    assert got["alias"] == "big-model"
+    assert got["model_path"] == "https://api.example.com"
+    assert got["n_ctx"] == 65536
+    assert got["build"] == "configured", "an assumed value must not read as observed"
+
+
+def test_a_local_server_still_prefers_what_it_observed(tmp_path):
+    from reverie_automata.adapters.local_server import LocalServer
+
+    s = LocalServer({"base_url": "http://127.0.0.1:8080", "model": "local", "n_ctx": 99})
+    s._props = lambda: {"model_path": "/m/a.gguf", "model_alias": "a",
+                        "total_slots": 1, "build_info": "b1",
+                        "default_generation_settings": {"n_ctx": 16384}}
+    got = s.server_identity()
+    assert got["n_ctx"] == 16384, "the declared value overrode the observed one"
+    assert got["build"] == "b1"
