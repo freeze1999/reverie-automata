@@ -1,7 +1,7 @@
 <h1 align="center">✦ reverie-automata ✦</h1>
 
 <p align="center">
-  <em>Give your agent a little moonlight—and ask it to bring receipts. ♡</em>
+  <em>Let your coding agent do one useful thing while you sleep. ♡</em>
 </p>
 
 <p align="center">
@@ -15,142 +15,79 @@
 </p>
 
 <p align="center">
-  <img src="docs/diagram.svg" width="760" alt="Gate decides whether to fire; a plan-execute-learn flywheel does the work; every cycle feeds the next.">
+  <img src="docs/diagram.svg" width="760" alt="A gate decides when the agent may run. The agent plans, works, checks, learns, and returns to sleep.">
 </p>
 
----
+Your coding agent usually waits for you to type something.
 
-You leave your agent at the prompt when you go to bed. It waits there very politely until morning. Adorable, perhaps—but not terribly useful. So you reach for cron, and now `backup.sh` runs at 3am whether or not anything changed, while the flaky test you left open keeps blinking innocently in the dark.
+reverie-automata gives it a small bedtime routine. It wakes when your rules allow it. Then it looks at the project, picks one task, checks its work, and leaves you a note.
 
-reverie-automata gives those quiet hours back to the agent. It reads the room, decides what's actually worth doing—a lazy night is a perfectly lovely answer—works with real tools, checks every proud little "done" against evidence, and leaves tomorrow's self a sharper note. Then it tidies the desk and slips out of the way.
+If there is nothing useful to do, it goes back to sleep. If a task looks risky, it waits for you. Cute and sensible.
 
-A small night ritual with taste. Point it at any coding agent you already love.
+## how it works
 
-## A tiny before / after
-
-**cron:** a to-do list on a timer. It fires `reindex.py` every night. It has no idea the index is already fresh, and no idea you spent yesterday fighting a flaky test.
-
-**reverie-automata:** the same quiet slot, but the agent looks first. Index fresh, queue empty, nothing new? It records "nothing worth doing" and curls back up. Sees the flaky test you left? It reproduces it, fixes it, leaves a neat little note, and puts anything risky by your bedside for approval before touching it.
-
-Same slot, same budget. One of them looks first.
-
-## The little night ritual
-
-A model-free gate decides whether to spend anything at all. If it fires, the agent walks three phases:
-
-```
-GATE   in the window? idle long enough? armed? under budget?     (pure function, no model call)
-  │
-  ▼
-① PLAN     harvest context → what did I learn last cycle? → what's worth doing now?
-② EXECUTE  one session per task, real tools, "done" only against evidence.
-           risky? → parked for your approval, keep working on the safe stuff.
-③ LEARN    journal · grade derived from the ledger · falsifiable lessons → next cycle
+```text
+wait → look → plan → do → check → remember → sleep
 ```
 
-Three details keep the dream honest:
+Each cycle has three parts:
 
-- **The gate is a pure function.** Whether to act, window, idle threshold, budget floor, daily and gap caps, and the load-bearing *fire-once-per-idle-gap*, is decided with no model call and no I/O, and tested without a clock or a network. Four idle hours is one cycle, not four.
-- **The agent earns "done."** A persistent agent's worst failure is fabrication: one invented fact in memory is recalled forever as true. So `done` is only recorded against a rerun, a diff, or a fetched response, never vibes, and lessons are falsifiable by construction (a situation, an action, the outcome actually observed).
-- **Risk is caught on the action, not the plan.** A tool-layer inspector classifies each concrete call: protected-path writes, privileged commands, raw egress, mass deletion, messaging strangers. Those become approvals bound to the exact diff or command, delivered to a human whose identity is verified before their yes counts. Everything else runs and is logged, with a per-cycle blast radius of anything touched outside the sandbox.
+1. **Plan:** Read the project and choose useful work.
+2. **Execute:** Use your coding agent to do the task.
+3. **Learn:** Record what happened for the next cycle.
 
-## Bring your favorite agent
+A small gate runs first. It checks the time, idle period, budget, and daily limit. This keeps one long night from becoming a pile of surprise runs.
 
-Every modern coding agent has a "run this prompt, print the result" mode. That's the whole contract. Pick one in config, no code:
+## try the demo
 
-```yaml
-agent:
-  backend: claude_code      # claude_code · codex · cursor · devin · windsurf · cline · pi · mock
-  options: { bin: claude, model: sonnet }
-```
-
-| backend | driven by |
-|---|---|
-| `claude_code` | `claude -p <prompt> --output-format json` |
-| `codex` | `codex exec <prompt> --full-auto` |
-| `cursor` | `cursor-agent -p <prompt>` |
-| `devin` | your `devin run <prompt>` wrapper |
-| `windsurf` | `windsurf --headless -p <prompt>` |
-| `cline` | `cline task <prompt>` |
-| `pi` | configurable `bin` + subcommand |
-| `mock` | deterministic, offline, for the demo and tests |
-
-If the brain is a model you serve yourself rather than an agent someone else
-ships, two backends drive it directly:
-
-| backend | driven by |
-|---|---|
-| `local_server` | an OpenAI-shaped endpoint (`llama.cpp` and friends), planning under a JSON schema |
-| `local_agent` | a tool-using loop for that same small brain: one call per turn, a closed enum of tools, one string argument |
-
-Both exist because a small quantized model understands the task and then
-fails at the mechanics, inventing a tool that does not exist or writing
-something that is nearly JSON. A schema makes malformed output impossible
-rather than unlikely. Details in [`docs/adapters.md`](docs/adapters.md).
-
-Binaries and flags come from config, because CLIs move fast. A new backend is a ~15-line subclass, never a fork. Same for approval **transports** (`stdout`, `telegram`, your own Slack or webhook) and context **sources** (files, shell probes, marker-scanned repos, your own inbox).
-
-## Try one dream
-
-No key required. The demo runs on the deterministic mock backend.
+You need Python 3.10 or newer. The demo is local and does not need an API key.
 
 ```bash
-git clone https://github.com/freeze1999/reverie-automata && cd reverie-automata
-python examples/demo.py       # one full plan → execute → learn cycle
-python -m pytest -q            # 237 tests, standard-library core (pytest + pyyaml for the suite)
+git clone https://github.com/freeze1999/reverie-automata
+cd reverie-automata
+python3 examples/demo.py
 ```
 
-Point it at a real agent and a real project:
+The demo runs one complete cycle with a pretend agent. You can watch each step and read its notes.
+
+## try a real agent
+
+The Claude Code example runs one supervised cycle. Install and sign in to Claude Code first.
 
 ```bash
-cp reverie.yaml.example reverie.yaml               # edit the one file
-python examples/with_claude_code.py ~/my-project   # one supervised cycle, watched
+python3 examples/with_claude_code.py ~/my-project
 ```
 
-Run it as an actual idle loop (cron, every 10 minutes):
+Built-in adapters support Claude Code, Codex, Cursor, Devin, Windsurf, Cline, Pi, and local models. Copy `reverie.yaml.example` when you are ready to change the schedule or safety rules. See [the adapter guide](docs/adapters.md) for setup.
 
-```python
-from reverie_automata import Config, Runner
+## what you get in the morning
 
-runner = Runner(
-    Config.load("reverie.yaml"),
-    last_input_ts=lambda: my_last_user_activity(),   # when did a human last act?
-    is_available=lambda: not currently_busy(),        # yield while they're around
-)
-runner.tick()      # the gate decides; the engine only runs when it should
-```
+- A list of every task and its result
+- A short journal from the cycle
+- Lessons for the next run
+- A record of files changed outside the sandbox
+- Approval requests for risky work
 
-## What it leaves on your desk by morning
+The agent may only mark a task as done when it has evidence. Evidence can be a test result, diff, or fetched response.
 
-- a ledger row for every task, written *as it happens*, so a crash mid-cycle still tells the truth;
-- a journal entry in the agent's own words, plus a grade **derived from the ledger**, never self-awarded;
-- zero to three falsifiable lessons in `MEMORY.md`, the policy the next cycle opens by reading;
-- open **threads**, the single work queue, carrying unfinished or parked work forward;
-- an `outcome.json` per cycle with the full trace and blast radius.
+## safety
 
-Continuity lives in that durable state, not in a session that never ends. Persistent mind, ephemeral compute: the agent wakes, reconstructs what matters from memory, acts, consolidates, sleeps.
+- The gate limits when and how often a cycle can run.
+- The inspector checks real tool calls before they run.
+- Protected file writes, deletion, privileged commands, and raw uploads can be blocked.
+- Risky work can wait for approval while safe work continues.
+- Each cycle writes a ledger as it works, so a crash still leaves a useful record.
 
-## Layout
+Start with the demo. Read the output. Point it at a test project before you trust it with anything important.
 
-| module | does |
-|---|---|
-| `gate.py` | the model-free "fire this tick?" decision, plus a PID-aware lock. pure, tested. |
-| `harvest.py` | assembles the working context under a hard token budget. |
-| `engine.py` | plan → execute → learn. owns every durable write. |
-| `inspector.py` | the tool-layer brake. classifies each concrete call. pure, tested. |
-| `store.py` | sqlite: cycles, ledger, threads, artifact-bound approvals, lessons. |
-| `prompts.py` | the three phase prompts. generic defaults, override freely. |
-| `adapters/` | agent backends · approval transports · context sources. |
-| `runner.py` | gate and persistence glue for a cron entrypoint. |
+## status
 
-Design notes in [`docs/architecture.md`](docs/architecture.md). Writing a new adapter: [`docs/adapters.md`](docs/adapters.md).
+This is a reference project for developers. It is not a hosted service or a one-click app. The core uses the Python standard library. Tests need `pytest` and `pyyaml`.
 
-## Status
+For the full design, read [the architecture notes](docs/architecture.md). For agent setup, read [the adapter guide](docs/adapters.md).
 
-A clean-room reference implementation: provider-agnostic, standard-library at its core (`pytest` and `pyyaml` for the suite, `tiktoken` optional for sharper budgeting). It is not a glittery batteries-included platform; the lovely part is the interfaces. Wire them to whatever already lives on your desk.
+## license
 
-## License
+MIT. Give your agent a quiet little job, then ask for receipts in the morning. ♡
 
-MIT. Take it, point it at something worthwhile, and let it think while you sleep. In the morning, ask for receipts. ♡
-
-<p align="center"><sub>dream freely · verify everything · leave the desk prettier than you found it</sub></p>
+<p align="center"><sub>dream softly · verify everything</sub></p>
