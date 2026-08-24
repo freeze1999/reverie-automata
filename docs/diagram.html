@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>reverie-automata cycle</title>
+  <!--
+    Source of truth for diagram.png.
+    The layout uses Grid and Flexbox so copy can change without hand-placing text.
+    Render the .diagram element at a 1200px viewport with a 2x device scale.
+  -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --night: #0a0f1e;
+      --night-2: #171329;
+      --panel: #171c30;
+      --panel-2: #202640;
+      --line: #858ca8;
+      --text: #f8f6ff;
+      --muted: #b9b6c9;
+      --quiet: #918da4;
+      --violet: #8f71ef;
+      --blue: #4c7de5;
+      --rose: #bc609d;
+      --amber: #e2af42;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: transparent;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body { padding: 16px; }
+
+    .diagram {
+      position: relative;
+      width: min(1168px, calc(100vw - 32px));
+      overflow: hidden;
+      border: 1px solid #272d46;
+      border-radius: 30px;
+      padding: 38px 40px 22px;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 88% 8%, rgba(190, 178, 255, .13), transparent 18%),
+        linear-gradient(135deg, var(--night), #10172a 58%, var(--night-2));
+      box-shadow: 0 24px 70px rgba(3, 6, 15, .35);
+    }
+
+    .stars {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: .72;
+      background-image:
+        radial-gradient(circle at 6% 17%, #bdb3ff 0 1.5px, transparent 2px),
+        radial-gradient(circle at 19% 7%, #bdb3ff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 63% 9%, #bdb3ff 0 1.3px, transparent 1.8px),
+        radial-gradient(circle at 95% 18%, #bdb3ff 0 1.4px, transparent 2px);
+    }
+
+    .topline {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: #aea8ca;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 680px;
+      margin: 0;
+      font-size: clamp(26px, 3vw, 38px);
+      line-height: 1.08;
+      letter-spacing: -.035em;
+    }
+
+    .gate {
+      flex: 0 0 252px;
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 0 14px;
+      border: 1px solid #77708f;
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: rgba(30, 33, 54, .92);
+    }
+
+    .gate-icon {
+      grid-row: 1 / 4;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border: 1px solid #9088aa;
+      border-radius: 13px;
+      color: #dcd6ff;
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .gate strong { font-size: 17px; }
+    .gate span { color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .gate small { color: var(--quiet); font-size: 10.5px; line-height: 1.5; }
+
+    .workbench {
+      position: relative;
+      display: grid;
+      grid-template-columns: 234px 34px minmax(0, 1fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .context {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      border: 1px solid #39405d;
+      border-radius: 22px;
+      padding: 20px;
+      background: rgba(22, 27, 46, .94);
+      box-shadow: 0 12px 28px rgba(3, 5, 13, .28);
+    }
+
+    .context h2,
+    .phase h2,
+    .safety h2,
+    .state h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: -.015em;
+    }
+
+    .chips {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .chip {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid #3c4565;
+      border-radius: 11px;
+      padding: 8px 9px;
+      color: #d0ccdf;
+      background: var(--panel-2);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .chip.wide { grid-column: 1 / -1; }
+    .chip b { color: #eeeaff; font-size: 13px; }
+
+    .context-note {
+      margin: auto 0 0;
+      padding-top: 18px;
+      color: var(--quiet);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: var(--line);
+      font-size: 29px;
+      font-weight: 300;
+    }
+
+    .right-side {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .process {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1.16fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .phase {
+      display: flex;
+      min-width: 0;
+      min-height: 174px;
+      flex-direction: column;
+      border-radius: 22px;
+      padding: 20px;
+      box-shadow: 0 14px 30px rgba(3, 5, 13, .3);
+    }
+
+    .phase.look { background: linear-gradient(145deg, #6854d9, #9b70ee); }
+    .phase.do { background: linear-gradient(145deg, #3569d1, #5b8bed); }
+    .phase.check { background: linear-gradient(145deg, #994b98, #cf6b9b); }
+
+    .phase-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+
+    .step {
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .14em;
+    }
+
+    .phase-icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .16);
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    .phase p {
+      margin: auto 0 0;
+      color: rgba(249, 247, 255, .72);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .safety-row {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .safety {
+      display: grid;
+      width: min(560px, 76%);
+      grid-template-columns: 54px 1fr;
+      gap: 0 14px;
+      align-items: center;
+      border: 1px solid var(--amber);
+      border-radius: 18px;
+      padding: 14px 18px;
+      background: #2b2518;
+    }
+
+    .safety-icon {
+      grid-row: 1 / 3;
+      display: grid;
+      place-items: center;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      color: #f0c45e;
+      background: rgba(216, 168, 61, .14);
+      font-size: 25px;
+      font-weight: 900;
+    }
+
+    .safety p {
+      margin: 5px 0 0;
+      color: #c9c1ae;
+      font-size: 11.5px;
+      line-height: 1.4;
+    }
+
+    .state {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.45fr 1fr;
+      gap: 26px;
+      align-items: center;
+      margin-top: 22px;
+      border: 1px solid #41465f;
+      border-radius: 20px;
+      padding: 17px 22px;
+      background: linear-gradient(90deg, #171c31, #1d2139 50%, #211a35);
+    }
+
+    .state::before {
+      content: "↑  next cycle reads";
+      position: absolute;
+      left: 28px;
+      top: -20px;
+      color: #b8adff;
+      font-size: 10.5px;
+      font-weight: 800;
+    }
+
+    .state-main {
+      display: grid;
+      grid-template-columns: 45px 1fr;
+      gap: 0 14px;
+      align-items: center;
+    }
+
+    .db-icon {
+      grid-row: 1 / 3;
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border: 2px solid #a99bf8;
+      border-radius: 50%;
+      color: #c8bfff;
+      font-size: 21px;
+      font-weight: 900;
+    }
+
+    .state p,
+    .files p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .files {
+      border-left: 1px solid #41465f;
+      padding-left: 26px;
+    }
+
+    .files strong { font-size: 12px; }
+
+    .footer {
+      margin: 14px 0 0;
+      color: #8f8b9f;
+      font-size: 10.5px;
+      font-style: italic;
+      text-align: center;
+    }
+
+    @media (max-width: 840px) {
+      body { padding: 0; }
+      .diagram { width: 100vw; border-radius: 0; padding: 26px 20px 18px; }
+      .topline, .workbench { grid-template-columns: 1fr; display: grid; }
+      .gate { width: 100%; }
+      .workbench > .arrow { transform: rotate(90deg); }
+      .process { grid-template-columns: 1fr; }
+      .process > .arrow { transform: rotate(90deg); min-height: 24px; }
+      .safety { width: 100%; }
+      .state { grid-template-columns: 1fr; }
+      .files { border-top: 1px solid #41465f; border-left: 0; padding: 14px 0 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="diagram" role="img" aria-label="How one reverie-automata cycle works">
+    <div class="stars"></div>
+
+    <header class="topline">
+      <div>
+        <p class="eyebrow">one small cycle</p>
+        <h1>Wake, do something useful, leave a note.</h1>
+      </div>
+      <section class="gate" aria-label="Wake gate">
+        <div class="gate-icon">✓</div>
+        <strong>Wake gate</strong>
+        <span>idle · due work · or both</span>
+        <small>window · caps · budget · kill</small>
+      </section>
+    </header>
+
+    <section class="workbench">
+      <aside class="context">
+        <p class="eyebrow">what it sees</p>
+        <h2>Context, with a queue</h2>
+        <div class="chips">
+          <span class="chip"><b>▣</b> inbox</span>
+          <span class="chip"><b>≡</b> orders</span>
+          <span class="chip wide"><b>☷</b> due threads</span>
+          <span class="chip"><b>◇</b> lessons</span>
+          <span class="chip"><b>A</b> sources</span>
+        </div>
+        <p class="context-note">Nothing due? No expensive call.</p>
+      </aside>
+
+      <div class="arrow" aria-hidden="true">→</div>
+
+      <div class="right-side">
+        <div class="process">
+          <article class="phase look">
+            <div class="phase-top">
+              <span class="step">01 · LOOK</span>
+              <span class="phase-icon">◎</span>
+            </div>
+            <h2>Choose the work</h2>
+            <p>typed task menu<br>or an honest nothing</p>
+          </article>
+
+          <div class="arrow" aria-hidden="true">→</div>
+
+          <article class="phase do">
+            <div class="phase-top">
+              <span class="step">02 · DO</span>
+              <span class="phase-icon">&gt;_</span>
+            </div>
+            <h2>Act with tools</h2>
+            <p>agent or delegate<br>one ledger row per task</p>
+          </article>
+
+          <div class="arrow" aria-hidden="true">→</div>
+
+          <article class="phase check">
+            <div class="phase-top">
+              <span class="step">03 · CHECK</span>
+              <span class="phase-icon">✓</span>
+            </div>
+            <h2>Learn from evidence</h2>
+            <p>journal · derived grade<br>falsifiable lessons</p>
+          </article>
+        </div>
+
+        <div class="safety-row">
+          <section class="safety">
+            <div class="safety-icon">✓</div>
+            <h2>Safety lives on the action</h2>
+            <p>inspector on each call · risky work waits for exact approval</p>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="state">
+      <div class="state-main">
+        <div class="db-icon">◉</div>
+        <h2>Durable desk</h2>
+        <p>state.db: cycles · tasks · journal · threads · approvals · lessons</p>
+      </div>
+      <div class="files">
+        <strong>MEMORY.md · outcome.json · events</strong>
+        <p>brain stamp · evidence · blast radius</p>
+      </div>
+    </section>
+
+    <p class="footer">persistent state · short-lived worker · your schedule</p>
+  </main>
+</body>
+</html>
