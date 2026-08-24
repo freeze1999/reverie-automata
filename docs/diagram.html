@@ -487,14 +487,6 @@
 
     .files strong { font-size: 12px; }
 
-    .footer {
-      margin: 14px 0 0;
-      color: #b59caf;
-      font-size: 10.5px;
-      font-style: italic;
-      text-align: center;
-    }
-
     /* Y2K .net pass: one canvas, floating UI, no mascot product card. */
     .diagram {
       border: 0;
@@ -717,7 +709,6 @@
       width: 32px;
       height: 32px;
       filter: drop-shadow(0 0 4px #65e7ff) drop-shadow(0 0 8px rgba(228, 132, 255, .56));
-      animation: synholon-spin 6s linear infinite;
     }
 
     .synholon-gear::before {
@@ -725,17 +716,8 @@
       position: absolute;
       inset: -5px;
       border-radius: 50%;
-      border: 1px dotted rgba(151, 245, 255, .82);
-      box-shadow: 0 0 8px rgba(112, 235, 255, .62);
-    }
-
-    .synholon-gear::after {
-      content: "";
-      position: absolute;
-      inset: 11px;
-      border-radius: 50%;
-      background: #fff3a8;
-      box-shadow: 0 0 7px #ffe989, 0 0 12px rgba(111, 239, 255, .86);
+      border: 1px solid rgba(197, 249, 255, .72);
+      box-shadow: 0 0 8px rgba(112, 235, 255, .52), inset 0 0 7px rgba(225, 154, 255, .2);
     }
 
     .synholon-gear svg {
@@ -745,14 +727,12 @@
       width: 100%;
       height: 100%;
       overflow: visible;
-      fill: rgba(111, 231, 255, .08);
-      stroke: currentColor;
-      stroke-width: 1.35;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+      fill: currentColor;
+      stroke: none;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: synholon-spin 12s steps(12, end) infinite;
     }
-    .footer { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
-
     @media (max-width: 840px) {
       body { padding: 0; }
       .diagram { width: 100vw; border-radius: 0; padding: 26px 20px 18px; }
@@ -771,7 +751,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       .sparkle, .mascot-panel img, .pulse-star, .pulse-star::after,
-      .db-icon::before, .synholon-gear { animation: none; }
+      .db-icon::before, .synholon-gear svg { animation: none; }
     }
   </style>
 </head>
@@ -783,7 +763,7 @@
 
     <header class="topline">
       <div>
-        <p class="eyebrow">REVERIE-AUTOMATA // NIGHT SHIFT</p>
+        <p class="eyebrow">REVERIE-AUTOMATA</p>
         <h1>Wake, do something useful, leave a note.</h1>
       </div>
       <section class="gate" aria-label="Wake gate">
@@ -861,9 +841,25 @@
       <div class="state-main">
         <div class="db-icon">
           <span class="synholon-gear" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M12.22 2H7.78l-.54 2.47-2.12 1.22-2.36-.77L.54 8.77l1.82 1.69v2.44L.54 14.59l2.22 3.85 2.36-.77 2.12 1.22.54 2.47h4.44l.54-2.47 2.12-1.22 2.36.77 2.22-3.85-1.82-1.69v-2.44l1.82-1.69-2.22-3.85-2.36.77-2.12-1.22L12.22 2Z" transform="translate(2.11 .32) scale(.82)"/>
-              <circle cx="12" cy="12" r="3.1"/>
+            <svg viewBox="-50 -50 100 100">
+              <path fill-rule="evenodd" d="M0-36A36 36 0 1 1 0 36A36 36 0 1 1 0-36ZM0-25A25 25 0 1 0 0 25A25 25 0 1 0 0-25Z"/>
+              <g>
+                <rect x="-4.5" y="-45" width="9" height="11"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(30)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(60)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(90)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(120)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(150)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(180)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(210)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(240)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(270)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(300)"/>
+                <rect x="-4.5" y="-45" width="9" height="11" transform="rotate(330)"/>
+              </g>
+              <rect x="-2.5" y="-48" width="5" height="96"/>
+              <rect x="-48" y="-2.5" width="96" height="5"/>
+              <circle r="6.5"/>
             </svg>
           </span>
         </div>
@@ -876,7 +872,6 @@
       </div>
     </section>
 
-    <p class="footer">persistent state · short-lived worker · your schedule</p>
   </main>
 </body>
 </html>
