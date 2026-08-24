@@ -22,7 +22,7 @@ Your coding agent usually waits for you to type something.
 
 reverie-automata gives it a small bedtime routine. It wakes when your rules allow it. Then it looks at the project, picks one task, checks its work, and leaves you a note.
 
-If there is nothing worth doing, it produces nothing. Trust it to make that call. If a task looks risky, it waits for you. Like your lazy intern.
+If there is nothing useful to do (trust it, it will judge if things are worth doing), it produces nothing. If a task looks risky, it waits for you. Like your lazy intern.
 
 ## how it works
 
