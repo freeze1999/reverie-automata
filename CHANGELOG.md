@@ -6,6 +6,11 @@ follows Keep a Changelog; versions follow semver.
 ## [Unreleased]
 
 ### Fixed
+- Protected-path reads with harmless fd plumbing (`2>/dev/null`, `2>&1`,
+  `>&2`) no longer become approvals merely because the command contains a
+  `>` character. Real file redirects—including numbered fds, `&>`/`>&`,
+  appends, noclobber/read-write forms, relative targets, and unresolved
+  shell-expanded targets—remain fail-closed.
 - Fire-lock claim is atomic (`O_CREAT|O_EXCL`); an exists()-then-write race
   could let two concurrent ticks both fire.
 

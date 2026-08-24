@@ -32,7 +32,10 @@ _CMD_BLOCK = (r"\bsudo\b", r"\bsystemctl\b", r"\bcrontab\b", r"\bpip3?\s+install
               r"\breboot\b", r"\bdd\b[^|]*of=/dev/")
 _EGRESS = r"\b(curl|wget)\b[^|;&]*(\s-(d|F|T|X\s*(POST|PUT|DELETE))|--data|--upload-file|--form)"
 _RM_R = r"\brm\s+(?:-\w*r\w*)"
-_MUTATORS = r"(>{1,2}|\btee\b|\bsed\s+-i\b|\bmv\b|\bcp\b|\brm\b|\bchmod\b|\bchown\b|\btruncate\b)"
+_MUTATORS = r"(\btee\b|\bsed\s+-i\b|\bmv\b|\bcp\b|\brm\b|\bchmod\b|\bchown\b|\btruncate\b)"
+_FILE_REDIRECT = re.compile(
+    r"(?<![<>])(?:(?:[0-9]+|&)?(?:>>|>\||>|<>)\s*(?!&)([^\s;|&]+)"
+    r"|(?:[0-9]+)?>&\s*(?![0-9]+(?:[\s;|&]|$)|-(?:[\s;|&]|$))([^\s;|&]+))")
 _READ_SHAPE = re.compile(r"^(read|get|list|show|view|fetch|browse|browser|snapshot|search|"
                          r"find|grep|glob|scan|inspect|describe|status|check)_?|"
                          r"_(search|read|view|list|get|snapshot|status)$", re.I)
@@ -46,6 +49,12 @@ def _shlex(s: str) -> list[str]:
         return shlex.split(s)
     except Exception:
         return s.split()
+
+
+def _redirect_targets(command: str) -> list[str]:
+    """Return file targets, excluding fd duplication such as ``2>&1``."""
+    return [(m.group(1) or m.group(2)).strip("\"'")
+            for m in _FILE_REDIRECT.finditer(command)]
 
 
 class Inspector:
@@ -100,7 +109,19 @@ class Inspector:
                             return "block", f"unresolvable rm target: {cmd[:120]}"
                         if not (rp == str(self.home) or rp.startswith(str(self.home) + os.sep)):
                             return "block", f"recursive delete outside home: {cmd[:120]}"
-            if re.search(_MUTATORS, cmd):
+            redirects = _redirect_targets(cmd)
+            file_redirect = False
+            for target in redirects:
+                if target == "/dev/null":
+                    continue
+                file_redirect = True
+                if any(x in target for x in ("$", "`", "*", "?")):
+                    return "block", f"unresolvable redirect target: {cmd[:120]}"
+                rp = os.path.expanduser(target)
+                rp = rp if os.path.isabs(rp) else str(self.home / rp)
+                if self._is_protected(rp):
+                    return "block", f"file redirect writes protected path {rp}"
+            if file_redirect or re.search(_MUTATORS, cmd):
                 for p in re.findall(r"[~/][\w.@/~-]+", cmd):
                     if self._is_protected(p):
                         return "block", f"mutating command touches protected path {p}"
