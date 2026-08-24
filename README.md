@@ -17,7 +17,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: no-preference)" srcset="docs/diagram.gif">
-    <img src="docs/diagram.png" width="920" alt="A deterministic gate wakes the agent for idle time, due work, or both. Context flows through planning, safe execution, learning, and durable state.">
+    <img src="docs/diagram.png" width="920" alt="A model-free gate wakes the agent for idle time, due work, or both. A context queue flows through look, do, check, action-level safety, and durable state.">
   </picture>
 </p>
 
@@ -30,16 +30,16 @@ If there is nothing useful to do (trust it, it will judge if things are worth do
 ## how it works
 
 ```text
-wait → look → plan → do → check → remember → sleep
+wait → gate → look → do → check → remember
 ```
 
 Each cycle has three parts:
 
-1. **Plan:** Read the project and choose useful work.
-2. **Execute:** Use your coding agent to do the task.
-3. **Learn:** Record what happened for the next cycle.
+1. **Look:** Read the context queue and choose useful work (or an honest nothing).
+2. **Do:** Give each task one session with real tools.
+3. **Check:** Ask for evidence, record what happened, and leave lessons for next time.
 
-A small gate runs first. It checks the time, idle period, budget, and daily limit. This keeps one long night from becoming a pile of surprise runs.
+A small model-free gate runs first. It can wake for an idle gap, due work, or both. It also checks the allowed window, budget, cooldown, daily limit, and kill switch before spending a model call.
 
 ## try the demo
 
@@ -69,16 +69,16 @@ Built-in adapters support Claude Code, Codex, Cursor, Devin, Windsurf, Cline, Pi
 - A short journal from the cycle
 - Lessons for the next run
 - A record of files changed outside the sandbox
-- Approval requests for risky work
+- Pending approval records for risky work
 
 The agent may only mark a task as done when it has evidence. Evidence can be a test result, diff, or fetched response.
 
 ## safety
 
 - The gate limits when and how often a cycle can run.
-- The inspector checks real tool calls before they run.
-- Protected file writes, deletion, privileged commands, and raw uploads can be blocked.
-- Risky work can wait for approval while safe work continues.
+- Risky tasks are parked as pending approval records while safe work continues.
+- The pure inspector can sit in a backend's pre-tool hook and check concrete calls before they run.
+- With that hook connected, protected writes, deletion, privileged commands, raw uploads, and unverified messages can be blocked.
 - Each cycle writes a ledger as it works, so a crash still leaves a useful record.
 
 Start with the demo. Read the output. Point it at a test project before you trust it with anything important.

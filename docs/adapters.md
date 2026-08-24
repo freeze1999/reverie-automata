@@ -13,10 +13,10 @@ class MyAgent:
     name = "myagent"
     def __init__(self, options=None): self.opt = dict(options or {})
     def complete(self, system, user, *, max_tokens=1000) -> str:
-        # a single non-tool completion (planning / text-only)
+        # a single non-tool completion (planning, text-only work, and learning)
         ...
     def run_session(self, directive, *, cwd="", env=None, turn_cap=40, timeout_s=2700) -> str:
-        # a real tool-using session (execute / learn). return the final text.
+        # one real tool-using execution session. return the final text.
         ...
 ```
 
@@ -41,6 +41,13 @@ Contract:
 
 `stdout` (offline, file-backed) and `telegram` (inline buttons, verified sender) ship
 as worked examples. Slack, email, and webhook transports are the same shape.
+
+The core engine currently parks risky tasks in `state.db` and creates an approval
+thread. Selecting a transport in config does **not** by itself send, poll, or execute
+that task. A host integration must call `send()` and `poll()`, apply accepted events
+through `Store.approval_transition()`, revalidate the exact artifact, and explicitly
+execute it. This separation is intentional fail-closed behaviour: an approval adapter
+is a delivery mechanism, not ambient permission to run something later.
 
 ## Context source
 

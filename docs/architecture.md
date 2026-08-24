@@ -3,6 +3,27 @@
 reverie-automata is a small idea with a few load-bearing details. This is the
 longer version of the README's diagram.
 
+## Reading the diagram
+
+The friendly labels in the diagram map directly to the implementation:
+
+- **Wake gate** is `Runner.tick()` asking the pure `gate.decide()` whether this
+  heartbeat is allowed to spend a model call.
+- **Context queue** is the harvester's bounded view of lessons, recent outcomes,
+  open and due threads, one-shot inbox drops, standing orders, and configured
+  sources. Harvested text is context, never authority: it cannot approve an action
+  or weaken a safety rule.
+- **Look** is PLAN: choose typed or prose work, or record an honest no-op.
+- **Do** is EXECUTE: one session per task, with one live ledger row per task.
+- **Check** is LEARN plus verification: keep receipts, derive the grade from the
+  ledger or referee, write the journal, and retain only falsifiable lessons.
+- **Safety lives on the action** means task-level risk is parked before execution,
+  while concrete tool calls can be classified by the pure inspector at a backend's
+  pre-tool hook.
+- **Durable desk** is `state.db` plus cycle artifacts such as `MEMORY.md`,
+  `outcome.json`, transcripts, and the event log. The process may disappear; this
+  record is what lets the next one continue.
+
 ## The gate is a pure function
 
 `gate.decide()` takes a timestamp, the last-input timestamp, an availability flag,
@@ -11,22 +32,30 @@ reason)`. No model call, no I/O, no side effects. That's deliberate: the decisio
 *whether* to spend money is the one place you cannot afford flakiness, so it is a pure
 function with exhaustive unit tests and no clock or network in sight.
 
-The load-bearing rule is **fire-once-per-idle-gap**. The gate is "armed" only when the
-latest input is newer than the input present at its last fire. Its own cycles never
-re-arm it. So: a human speaks, the gate arms, 60 min of silence pass, one cycle runs,
-then silence until they speak again. Four idle hours is one cycle, not four.
+The trigger has three modes:
 
-The lock is **PID-stamped**. A cycle writes its PID into `.fire.lock`. The reaper
-treats a lock as dead the instant its owning process is gone (a crash, a kill, a manual
-run that exited), reaped on the next tick rather than after a fixed timeout, while a
-genuinely long-running cycle (PID alive) is never reaped no matter how long it takes.
-An age backstop covers reused-PID and legacy no-PID locks.
+- **`idle`** wakes in an available person's idle gap. Its load-bearing rule is
+  **fire-once-per-idle-gap**: a human action arms the gate, one cycle consumes that
+  arm, and the engine cannot re-arm itself. Four idle hours is one cycle, not four.
+- **`work`** wakes only when an indexed queue check or inbox scan says work is due.
+  An empty heartbeat stops before any model call.
+- **`both`** requires due work and an idle gap.
+
+Window, minimum gap, daily cap, budget floor, and kill switch apply in every mode.
+The work trigger also honours thread cooldowns, so a failed or deferred task does not
+turn a fast heartbeat into a retry storm.
+
+The lock is **PID-and-host stamped**. A cycle writes both into `.fire.lock`. The
+reaper treats a lock as dead when its owning process is gone or the lock arrived from
+another machine, while a genuinely live local cycle is not reaped merely for taking a
+long time. An age backstop covers reused-PID and legacy no-PID locks.
 
 ## The flywheel owns the writes, the agent owns the reasoning
 
-Each phase is one call to a backend. The **engine** parses the structured envelope the
-agent returns and performs every durable write itself, so a hallucinated file path or a
-malformed line can never escape: the model never holds the file handle.
+PLAN and LEARN are one text completion each; EXECUTE is one session per task. The
+**engine** parses their structured envelopes and owns every write to its durable state.
+The execution session may change the project with real tools, but it never gets to
+invent where the ledger, journal, approvals, or lessons are stored.
 
 - **Plan:** one planning call over the harvested context produces a `Plan` (tasks, or an
   explicit `do_nothing`). The plan opens with a ritual question, *what did I learn last
@@ -40,18 +69,23 @@ malformed line can never escape: the model never holds the file handle.
 
 ## Risk is enforced on the action, not the plan
 
-Plan-level risk labels are UX; a determined or confused agent can talk around them.
-The real brake is `inspector.classify()`, which runs on each **concrete tool call**:
+Plan-level risk labels are only one layer; a determined or confused agent can talk
+around them. The engine first applies typed-task and wrapper risk rules, parking risky
+tasks as approvals before they execute. For backends that expose a pre-tool hook, the
+deeper brake is `inspector.classify()` on each **concrete tool call**:
 resolved-path writes to protected locations, privileged shell commands, raw network
 egress to non-allowlisted hosts, mass deletion, and messages to unverified recipients
-all become blocks. A block is filed as an **artifact-bound approval**, tied to the exact
-diff or command rather than a vague intent, and delivered to a human whose identity is
-verified before their decision counts. Everything else runs and is logged.
+all return a block with a reason. The hook that calls the inspector is responsible for
+stopping the action, logging it, and attaching any approval to the exact artifact or
+command rather than to a vague intent.
 
-The inspector is pure classification, so you can wire it into whatever pre-tool hook
-your agent backend exposes and unit-test it in isolation. It activates only for cycle
-sessions (the engine sets a `REVERIE_CYCLE` marker in the session environment), so it
-never interferes with the agent's normal interactive use.
+The inspector is pure classification, so it can be wired into whatever pre-tool hook
+an agent backend exposes and unit-tested in isolation. The engine marks cycle sessions
+with `REVERIE_CYCLE`, allowing the hook to stay out of normal interactive use. A CLI
+adapter with no pre-tool integration still gets the engine's task-level risk gate, but
+must not be described as having concrete-call enforcement. In the core engine, a risky
+task becomes a pending approval row and an approval thread; it is not executed merely
+because the planner asked for it.
 
 ## Continuity is durable state, not a long session
 
@@ -75,3 +109,11 @@ N+1's opening question. Memory is the policy; behaviour improves as the lessons
 accumulate and get pruned. The raw per-cycle traces are also kept as a clean, growing
 dataset, useful later if you ever *do* control the weights, though no training is
 claimed or implied here.
+
+## Maintaining the diagram
+
+`docs/diagram.html` is the editable source of truth. `docs/diagram.png` is the static
+and reduced-motion fallback; `docs/diagram.gif` is the animated README version. Both
+images must be regenerated from the HTML after a visual or wording change rather than
+edited independently. Keep the GIF below 10 MB, check a first and middle frame for
+disposal artifacts, and verify the HTML at desktop and mobile widths before committing.
