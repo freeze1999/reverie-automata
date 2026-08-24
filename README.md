@@ -22,7 +22,7 @@ Your coding agent usually waits for you to type something.
 
 reverie-automata gives it a small bedtime routine. It wakes when your rules allow it. Then it looks at the project, picks one task, checks its work, and leaves you a note.
 
-If there is nothing useful to do, it goes back to sleep. If a task looks risky, it waits for you. Cute and sensible.
+If there is nothing worth doing, it produces nothing. Trust it to make that call. If a task looks risky, it waits for you. Like your lazy intern.
 
 ## how it works
 
@@ -82,7 +82,11 @@ Start with the demo. Read the output. Point it at a test project before you trus
 
 ## status
 
-This is a reference project for developers. It is not a hosted service or a one-click app. The core uses the Python standard library. Tests need `pytest` and `pyyaml`.
+This is a reference project for developers. It is not a hosted service or a one-click app.
+
+Think of it as a cute janitor. It cleans up or patches your stuff when you are idle. Idle time is only the default. Customize it, reverse engineer it, and tinker with it. The loop can live wherever it is useful.
+
+The core uses the Python standard library. Tests need `pytest` and `pyyaml`.
 
 For the full design, read [the architecture notes](docs/architecture.md). For agent setup, read [the adapter guide](docs/adapters.md).
 
@@ -90,4 +94,4 @@ For the full design, read [the architecture notes](docs/architecture.md). For ag
 
 MIT. Give your agent a quiet little job, then ask for receipts in the morning. ♡
 
-<p align="center"><sub>dream softly · verify everything</sub></p>
+<p align="center"><sub>when the machine gets bored, it makes something · or nothing</sub></p>
