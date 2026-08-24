@@ -15,7 +15,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/diagram.png" width="920" alt="A deterministic gate wakes the agent for idle time, due work, or both. Context flows through planning, safe execution, learning, and durable state.">
+  <picture>
+    <source media="(prefers-reduced-motion: no-preference)" srcset="docs/diagram.gif">
+    <img src="docs/diagram.png" width="920" alt="A deterministic gate wakes the agent for idle time, due work, or both. Context flows through planning, safe execution, learning, and durable state.">
+  </picture>
 </p>
 
 Your coding agent usually waits for you to type something.
