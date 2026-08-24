@@ -1,7 +1,7 @@
-<h1 align="center">reverie-automata</h1>
+<h1 align="center">✦ reverie-automata ✦</h1>
 
 <p align="center">
-  <em>What does your agent do when nobody's watching?</em>
+  <em>Give your agent a little moonlight—and ask it to bring receipts. ♡</em>
 </p>
 
 <p align="center">
@@ -20,21 +20,21 @@
 
 ---
 
-You hire an agent so it's useful while you're there. Then you go to bed, and it just sits at the prompt, waiting to be spoken to. So you reach for cron: a table of jobs on a timer. Now it runs `backup.sh` at 3am whether or not anything changed, and it still can't see the bug you left open in the editor.
+You leave your agent at the prompt when you go to bed. It waits there very politely until morning. Adorable, perhaps—but not terribly useful. So you reach for cron, and now `backup.sh` runs at 3am whether or not anything changed, while the flaky test you left open keeps blinking innocently in the dark.
 
-reverie-automata gives those quiet hours to the agent instead. It reads the room, decides what's actually worth doing (a lazy night is a valid answer), does it with real tools, checks its own work against evidence, and writes down what it learned so the next run is sharper. Then it gets out of the way.
+reverie-automata gives those quiet hours back to the agent. It reads the room, decides what's actually worth doing—a lazy night is a perfectly lovely answer—works with real tools, checks every proud little "done" against evidence, and leaves tomorrow's self a sharper note. Then it tidies the desk and slips out of the way.
 
-A loop with taste. Point it at any coding agent you already run.
+A small night ritual with taste. Point it at any coding agent you already love.
 
-## Before / after
+## A tiny before / after
 
 **cron:** a to-do list on a timer. It fires `reindex.py` every night. It has no idea the index is already fresh, and no idea you spent yesterday fighting a flaky test.
 
-**reverie-automata:** the same idle slot, but the agent looks first. Index is fresh, nothing queued, no new input since it last ran? It records "nothing worth doing" and sleeps. Sees the flaky test you left? It reproduces it, fixes it, leaves a one-line note, and files anything risky for your approval before touching it.
+**reverie-automata:** the same quiet slot, but the agent looks first. Index fresh, queue empty, nothing new? It records "nothing worth doing" and curls back up. Sees the flaky test you left? It reproduces it, fixes it, leaves a neat little note, and puts anything risky by your bedside for approval before touching it.
 
 Same slot, same budget. One of them looks first.
 
-## How it works
+## The little night ritual
 
 A model-free gate decides whether to spend anything at all. If it fires, the agent walks three phases:
 
@@ -48,13 +48,13 @@ GATE   in the window? idle long enough? armed? under budget?     (pure function,
 ③ LEARN    journal · grade derived from the ledger · falsifiable lessons → next cycle
 ```
 
-Three details carry the whole design:
+Three details keep the dream honest:
 
 - **The gate is a pure function.** Whether to act, window, idle threshold, budget floor, daily and gap caps, and the load-bearing *fire-once-per-idle-gap*, is decided with no model call and no I/O, and tested without a clock or a network. Four idle hours is one cycle, not four.
 - **The agent earns "done."** A persistent agent's worst failure is fabrication: one invented fact in memory is recalled forever as true. So `done` is only recorded against a rerun, a diff, or a fetched response, never vibes, and lessons are falsifiable by construction (a situation, an action, the outcome actually observed).
 - **Risk is caught on the action, not the plan.** A tool-layer inspector classifies each concrete call: protected-path writes, privileged commands, raw egress, mass deletion, messaging strangers. Those become approvals bound to the exact diff or command, delivered to a human whose identity is verified before their yes counts. Everything else runs and is logged, with a per-cycle blast radius of anything touched outside the sandbox.
 
-## Point it at your agent
+## Bring your favorite agent
 
 Every modern coding agent has a "run this prompt, print the result" mode. That's the whole contract. Pick one in config, no code:
 
@@ -90,14 +90,14 @@ rather than unlikely. Details in [`docs/adapters.md`](docs/adapters.md).
 
 Binaries and flags come from config, because CLIs move fast. A new backend is a ~15-line subclass, never a fork. Same for approval **transports** (`stdout`, `telegram`, your own Slack or webhook) and context **sources** (files, shell probes, marker-scanned repos, your own inbox).
 
-## Quickstart
+## Try one dream
 
 No key required. The demo runs on the deterministic mock backend.
 
 ```bash
 git clone https://github.com/freeze1999/reverie-automata && cd reverie-automata
 python examples/demo.py       # one full plan → execute → learn cycle
-python -m pytest -q            # 203 tests, standard-library core (pytest + pyyaml for the suite)
+python -m pytest -q            # 237 tests, standard-library core (pytest + pyyaml for the suite)
 ```
 
 Point it at a real agent and a real project:
@@ -120,7 +120,7 @@ runner = Runner(
 runner.tick()      # the gate decides; the engine only runs when it should
 ```
 
-## What one cycle leaves behind
+## What it leaves on your desk by morning
 
 - a ledger row for every task, written *as it happens*, so a crash mid-cycle still tells the truth;
 - a journal entry in the agent's own words, plus a grade **derived from the ledger**, never self-awarded;
@@ -147,10 +147,10 @@ Design notes in [`docs/architecture.md`](docs/architecture.md). Writing a new ad
 
 ## Status
 
-A clean-room reference implementation, provider-agnostic, standard-library core (`pytest` and `pyyaml` for the suite, `tiktoken` optional for sharper budgeting). Not a batteries-included platform, the interesting parts are the interfaces. Wire them to whatever you already run.
+A clean-room reference implementation: provider-agnostic, standard-library at its core (`pytest` and `pyyaml` for the suite, `tiktoken` optional for sharper budgeting). It is not a glittery batteries-included platform; the lovely part is the interfaces. Wire them to whatever already lives on your desk.
 
 ## License
 
-MIT. Take it, point it at something, let it think while you sleep.
+MIT. Take it, point it at something worthwhile, and let it think while you sleep. In the morning, ask for receipts. ♡
 
-<p align="center"><sub>a loop with taste</sub></p>
+<p align="center"><sub>dream freely · verify everything · leave the desk prettier than you found it</sub></p>
