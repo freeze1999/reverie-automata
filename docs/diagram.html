@@ -478,18 +478,189 @@
       text-align: center;
     }
 
+    /* Y2K .net pass: one canvas, floating UI, no mascot product card. */
+    .diagram {
+      border: 0;
+      border-radius: 0;
+      background:
+        linear-gradient(rgba(114, 226, 255, .025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 128, 214, .025) 1px, transparent 1px),
+        radial-gradient(circle at 88% 4%, rgba(255, 190, 239, .18), transparent 19%),
+        radial-gradient(circle at 14% 70%, rgba(103, 224, 255, .1), transparent 27%),
+        linear-gradient(135deg, #070b20, #12132d 58%, #24112e);
+      background-size: 28px 28px, 28px 28px, auto, auto, auto;
+      box-shadow: none;
+    }
+
+    .diagram::after {
+      content: "";
+      position: absolute;
+      z-index: 10;
+      inset: 0;
+      pointer-events: none;
+      opacity: .08;
+      background: repeating-linear-gradient(180deg, transparent 0 3px, #ffffff 4px);
+      mix-blend-mode: soft-light;
+    }
+
+    h1 {
+      color: transparent;
+      background: linear-gradient(180deg, #ffffff 0 43%, #b9c5e8 48%, #ffffff 64%, #eaa9df 100%);
+      background-clip: text;
+      -webkit-background-clip: text;
+      filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .22));
+    }
+
+    .topline {
+      align-items: center;
+      border-bottom: 1px dotted rgba(119, 225, 255, .22);
+      padding-bottom: 22px;
+    }
+
+    .gate {
+      border: 0;
+      border-left: 2px solid #7be6ff;
+      border-radius: 0;
+      background: linear-gradient(90deg, rgba(76, 206, 255, .08), transparent);
+      box-shadow: none;
+    }
+
+    .gate-icon {
+      border-color: #d4f7ff;
+      color: #ffdc74;
+      background: radial-gradient(circle, rgba(98, 225, 255, .15), transparent 70%);
+      box-shadow: 0 0 20px rgba(102, 223, 255, .16);
+    }
+
+    .workbench { grid-template-columns: 340px minmax(0, 1fr); }
+
+    .mascot-panel {
+      min-height: 470px;
+      overflow: visible;
+      border: 0;
+      border-radius: 0;
+      background: none;
+      box-shadow: none;
+      isolation: auto;
+    }
+
+    .mascot-panel::before,
+    .mascot-panel::after,
+    .mascot-panel figcaption { display: none; }
+
+    .mascot-panel img {
+      height: 486px;
+      bottom: -4px;
+      filter: drop-shadow(0 12px 15px rgba(2, 4, 20, .58)) drop-shadow(0 0 12px rgba(124, 229, 255, .1));
+    }
+
+    .context {
+      position: absolute;
+      z-index: 5;
+      left: 0;
+      bottom: 10px;
+      display: block;
+      width: 326px;
+      min-width: 0;
+      border: 0;
+      border-left: 3px solid #77e5ff;
+      border-radius: 0;
+      padding: 11px 14px;
+      background: linear-gradient(90deg, rgba(6, 10, 30, .94), rgba(11, 12, 35, .82) 78%, transparent);
+      box-shadow: none;
+      backdrop-filter: blur(5px);
+      text-shadow: 0 1px 4px #050719;
+    }
+
+    .context .eyebrow { margin-bottom: 4px; font-size: 9px; color: #84eaff; }
+    .context h2 { font-size: 15px; }
+    .context .chips { margin-top: 8px; }
+
+    .chip {
+      border: 0;
+      border-radius: 999px;
+      padding: 4px 7px;
+      background: linear-gradient(180deg, rgba(231, 241, 255, .2), rgba(111, 143, 203, .08));
+      box-shadow: inset 0 1px rgba(255, 255, 255, .24);
+      font-size: 8.5px;
+    }
+
+    .chip b { font-size: 10px; }
+
+    .context-note {
+      margin-top: 7px;
+      border: 0;
+      padding: 0;
+      color: #b7bdd0;
+      font-size: 9px;
+    }
+
+    .right-side { justify-content: center; gap: 18px; }
+
+    .phase {
+      min-height: 184px;
+      border: 0;
+      border-top: 2px solid var(--phase-accent);
+      border-bottom: 1px dotted rgba(255, 255, 255, .16);
+      border-radius: 0;
+      padding: 20px 12px 18px;
+      background: transparent;
+      box-shadow: none;
+      text-shadow: 0 1px 5px #050719;
+    }
+
+    .phase.look { --phase-accent: #c875ff; background: transparent; }
+    .phase.do { --phase-accent: #72e4ff; background: transparent; }
+    .phase.check { --phase-accent: #ff7fc9; background: transparent; }
+
+    .phase h2 { color: #fff; }
+    .phase .step { color: var(--phase-accent); text-shadow: 0 0 12px var(--phase-accent); }
+
+    .phase-icon {
+      width: auto;
+      height: auto;
+      border-radius: 0;
+      color: var(--phase-accent);
+      background: none;
+      box-shadow: none;
+      text-shadow: 0 0 13px var(--phase-accent);
+    }
+
+    .arrow { color: #79e6ff; font-family: monospace; }
+
+    .safety {
+      width: 100%;
+      border: 0;
+      border-top: 1px solid rgba(255, 218, 116, .64);
+      border-bottom: 1px dotted rgba(255, 135, 213, .28);
+      border-radius: 0;
+      background: linear-gradient(90deg, rgba(255, 194, 80, .09), rgba(255, 114, 205, .05), transparent);
+      box-shadow: none;
+    }
+
+    .safety-icon { background: none; box-shadow: none; }
+
+    .state {
+      border: 0;
+      border-top: 1px solid rgba(124, 228, 255, .42);
+      border-bottom: 1px dotted rgba(255, 126, 212, .3);
+      border-radius: 0;
+      background: linear-gradient(90deg, rgba(95, 217, 255, .06), rgba(255, 103, 197, .06));
+      box-shadow: none;
+    }
+
+    .db-icon { border: 0; box-shadow: 0 0 18px rgba(109, 229, 255, .14); }
+    .footer { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
+
     @media (max-width: 840px) {
       body { padding: 0; }
       .diagram { width: 100vw; border-radius: 0; padding: 26px 20px 18px; }
       .topline, .workbench { grid-template-columns: 1fr; display: grid; }
       .gate { width: 100%; }
-      .mascot-panel { width: 100%; min-height: 430px; }
-      .mascot-panel::before { left: calc(50% - 112px); }
-      .mascot-panel::after { left: calc(50% - 90px); }
-      .mascot-panel img { height: 416px; }
+      .mascot-panel { width: 100%; min-height: 450px; }
+      .mascot-panel img { height: 446px; }
       .workbench > .arrow { transform: rotate(90deg); }
-      .context { grid-template-columns: 1fr; padding: 20px; }
-      .context-note { padding: 10px 0 0; border-top: 1px solid #65517f; border-left: 0; }
+      .context { width: min(315px, 92%); }
       .process { grid-template-columns: 1fr; }
       .process > .arrow { transform: rotate(90deg); min-height: 24px; }
       .safety { width: 100%; }
@@ -498,7 +669,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .sparkle, .mascot-panel::before, .mascot-panel::after, .mascot-panel img { animation: none; }
+      .sparkle, .mascot-panel img { animation: none; }
     }
   </style>
 </head>
@@ -510,7 +681,7 @@
 
     <header class="topline">
       <div>
-        <p class="eyebrow">✦ magical night shift ✦</p>
+        <p class="eyebrow">REVERIE-AUTOMATA // NIGHT SHIFT</p>
         <h1>Wake, do something useful, leave a note.</h1>
       </div>
       <section class="gate" aria-label="Wake gate">
@@ -524,13 +695,9 @@
     <section class="workbench">
       <figure class="mascot-panel">
         <img src="assets/elysia-mascot.webp" alt="Elysia mascot">
-        <figcaption>familiar ✦</figcaption>
-      </figure>
-
-      <div class="right-side">
         <aside class="context">
           <div>
-            <p class="eyebrow">what it sees</p>
+            <p class="eyebrow">INPUT.STREAM</p>
             <h2>Context, with a queue</h2>
           </div>
           <div class="chips">
@@ -542,7 +709,9 @@
           </div>
           <p class="context-note">Nothing due? No expensive call.</p>
         </aside>
+      </figure>
 
+      <div class="right-side">
         <div class="process">
           <article class="phase look">
             <div class="phase-top">
