@@ -229,6 +229,23 @@
 
     @keyframes orbit { to { transform: rotate(378deg); } }
 
+    @keyframes gate-pulse {
+      0%, 100% { transform: scale(.78) rotate(0deg); opacity: .68; filter: blur(.15px); }
+      50% { transform: scale(1.08) rotate(45deg); opacity: 1; filter: blur(0); }
+    }
+
+    @keyframes gate-halo {
+      0%, 100% { opacity: .25; transform: scale(.72); }
+      50% { opacity: .85; transform: scale(1.16); }
+    }
+
+    @keyframes synholon-spin { to { transform: rotate(360deg); } }
+
+    @keyframes synholon-breathe {
+      0%, 100% { opacity: .52; transform: scale(.88); }
+      50% { opacity: 1; transform: scale(1.08); }
+    }
+
     .workbench {
       position: relative;
       display: grid;
@@ -532,6 +549,33 @@
       box-shadow: 0 0 20px rgba(102, 223, 255, .16);
     }
 
+    .pulse-star {
+      position: relative;
+      display: block;
+      width: 19px;
+      height: 19px;
+      animation: gate-pulse 2.2s ease-in-out infinite;
+    }
+
+    .pulse-star::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      clip-path: polygon(50% 0, 61% 38%, 100% 50%, 61% 62%, 50% 100%, 39% 62%, 0 50%, 39% 38%);
+      background: linear-gradient(135deg, #fff8c8, #ffd561 48%, #8ff2ff);
+      box-shadow: 0 0 10px #ffe778;
+    }
+
+    .pulse-star::after {
+      content: "";
+      position: absolute;
+      inset: -8px;
+      z-index: -1;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 225, 103, .7), rgba(114, 232, 255, .18) 38%, transparent 69%);
+      animation: gate-halo 2.2s ease-in-out infinite;
+    }
+
     .workbench { grid-template-columns: 340px minmax(0, 1fr); }
 
     .mascot-panel {
@@ -649,7 +693,64 @@
       box-shadow: none;
     }
 
-    .db-icon { border: 0; box-shadow: 0 0 18px rgba(109, 229, 255, .14); }
+    .db-icon {
+      position: relative;
+      overflow: visible;
+      border: 0;
+      color: #bff8ff;
+      background: radial-gradient(circle, rgba(133, 232, 255, .16), transparent 66%);
+      box-shadow: 0 0 22px rgba(109, 229, 255, .16);
+    }
+
+    .db-icon::before {
+      content: "";
+      position: absolute;
+      inset: -5px;
+      border: 1px solid rgba(147, 240, 255, .24);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(110, 237, 255, .32), inset 0 0 12px rgba(235, 156, 255, .12);
+      animation: synholon-breathe 2.8s ease-in-out infinite;
+    }
+
+    .synholon-gear {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(0 0 4px #65e7ff) drop-shadow(0 0 8px rgba(228, 132, 255, .56));
+      animation: synholon-spin 6s linear infinite;
+    }
+
+    .synholon-gear::before {
+      content: "";
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 1px dotted rgba(151, 245, 255, .82);
+      box-shadow: 0 0 8px rgba(112, 235, 255, .62);
+    }
+
+    .synholon-gear::after {
+      content: "";
+      position: absolute;
+      inset: 11px;
+      border-radius: 50%;
+      background: #fff3a8;
+      box-shadow: 0 0 7px #ffe989, 0 0 12px rgba(111, 239, 255, .86);
+    }
+
+    .synholon-gear svg {
+      position: relative;
+      z-index: 1;
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      fill: rgba(111, 231, 255, .08);
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
     .footer { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
 
     @media (max-width: 840px) {
@@ -669,7 +770,8 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .sparkle, .mascot-panel img { animation: none; }
+      .sparkle, .mascot-panel img, .pulse-star, .pulse-star::after,
+      .db-icon::before, .synholon-gear { animation: none; }
     }
   </style>
 </head>
@@ -685,7 +787,7 @@
         <h1>Wake, do something useful, leave a note.</h1>
       </div>
       <section class="gate" aria-label="Wake gate">
-        <div class="gate-icon">✦</div>
+        <div class="gate-icon"><span class="pulse-star" aria-hidden="true"></span></div>
         <strong>Wake gate</strong>
         <span>idle · due work · or both</span>
         <small>window · caps · budget · kill</small>
@@ -698,7 +800,7 @@
         <aside class="context">
           <div>
             <p class="eyebrow">INPUT.STREAM</p>
-            <h2>Context, with a queue</h2>
+            <h2>Context queue</h2>
           </div>
           <div class="chips">
             <span class="chip"><b>▣</b> inbox</span>
@@ -757,7 +859,14 @@
 
     <section class="state">
       <div class="state-main">
-        <div class="db-icon">◉</div>
+        <div class="db-icon">
+          <span class="synholon-gear" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12.22 2H7.78l-.54 2.47-2.12 1.22-2.36-.77L.54 8.77l1.82 1.69v2.44L.54 14.59l2.22 3.85 2.36-.77 2.12 1.22.54 2.47h4.44l.54-2.47 2.12-1.22 2.36.77 2.22-3.85-1.82-1.69v-2.44l1.82-1.69-2.22-3.85-2.36.77-2.12-1.22L12.22 2Z" transform="translate(2.11 .32) scale(.82)"/>
+              <circle cx="12" cy="12" r="3.1"/>
+            </svg>
+          </span>
+        </div>
         <h2>Durable desk</h2>
         <p>state.db: cycles · tasks · journal · threads · approvals · lessons</p>
       </div>
