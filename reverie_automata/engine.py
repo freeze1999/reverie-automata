@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -144,6 +145,50 @@ RISKY_HINTS = re.compile(
 # discriminator here, after re-prod-uce and after `program` in the routing
 # rules. The lesson keeps arriving in the same envelope: a pattern that fires
 # on a substring of normal work is not cautious, it is broken.
+
+
+@dataclass
+class _PlanPhase:
+    raw: str
+    plan: dict
+    complaints: list[str]
+    false_no_op: bool
+    work_available: bool
+    unreachable: bool
+    context: str
+    inbox_files: list[Path]
+
+
+@dataclass
+class _ExecutionPhase:
+    ledger: list[dict]
+    pre: dict
+    before: dict
+    inbox_consumed: int
+
+
+@dataclass
+class _LearnPhase:
+    raw: str
+    journal: str
+    review: str
+    lessons: list[Lesson]
+
+
+@dataclass
+class _GradePhase:
+    grade: str
+    moved: dict
+    touched: list
+
+
+@dataclass
+class _TaskContext:
+    task: dict
+    tid: str
+    what: str
+    risk: str
+    risk_pattern: str
 
 
 class Engine:
@@ -303,13 +348,8 @@ class Engine:
         m = RISKY_HINTS.search(blob)
         return ("RISKY", m.group(0)) if m else ("SAFE", "")
 
-    def run_cycle(self, now: datetime | None = None, text_only: bool = False) -> Outcome:
-        now = now or datetime.now()
+    def _open_cycle(self, now: datetime):
         con = self.store.connect()
-        # A work-gated heartbeat can fire twice inside one second when cycles
-        # are short (a no-op cycle costs milliseconds), and a second-resolution
-        # id then collides on the primary key and kills the second cycle. The
-        # idle engine could never do this; the standing one does it routinely.
         ts = base = now.strftime("%Y-%m-%d-%H%M%S")
         n = 1
         while con.execute("SELECT 1 FROM cycles WHERE ts=?", (ts,)).fetchone():
@@ -326,187 +366,135 @@ class Engine:
                                       "reconcile its half-done work", kind="recovery", created_cycle=ts)
         con.execute("INSERT INTO cycles (ts, started_at, status) VALUES (?,?,'running')", (ts, now.timestamp()))
         con.commit()
+        return con, ts, cdir
 
-        # --- PLAN ---
-        # Reading the inbox is pure; the drops are archived only once a plan
-        # exists, so a failed inference leaves them for the next cycle.
-        inbox_section, inbox_files = self.inbox.read()
-        context, _ = self.harvest.build(con, {"inbox": inbox_section,
-                                              "mandates": self._standing()})
-        # Which opening the planner gets is a fact about the post, not a
-        # preference: an engine woken because work is due must not be told that
-        # nobody is asking anything of it.
-        if str(self.cfg.get("trigger", "idle")).lower() in ("work", "both"):
-            typed = self.menu is not None
-            prompt = P.PLAN_STANDING.format(
-                context=context, constraints=P.constraints(self.cfg),
-                menu=(P.TYPED_MENU.format(menu=self.menu.describe()) if typed else ""),
-                envelope=(P.TYPED_ENVELOPE if typed else P.PROSE_ENVELOPE))
-        else:
-            prompt = P.PLAN.format(context=context)
-        import os
-        os.environ["REVERIE_CYCLE"], os.environ["REVERIE_HOME"] = ts, str(self.home)
-        p1 = self.planner.complete("", prompt,
-                                   max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
-        (cdir / "plan.txt").write_text(p1, encoding="utf-8")
-        # A brain that never answered is not a machine that chose to rest.
-        #
-        # Found the hard way. The planning context outgrew the server's window,
-        # every call came back HTTP 400, and the error string was written into
-        # plan.txt, failed to parse, and became `do_nothing` with the reason
-        # "unparseable plan". From the outside those cycles were indistinguish-
-        # able from idle ones: graded F, no alarm, hours of them. The engine
-        # was reporting a machine with nothing to do while the machine was
-        # unreachable, which is the exact confusion F7 is about, one layer down
-        # and about ourselves.
-        unreachable = _transport_failed(p1)
+    def _planning_prompt(self, context: str) -> str:
+        if str(self.cfg.get("trigger", "idle")).lower() not in ("work", "both"):
+            return P.PLAN.format(context=context)
+        typed = self.menu is not None
+        return P.PLAN_STANDING.format(
+            context=context, constraints=P.constraints(self.cfg),
+            menu=(P.TYPED_MENU.format(menu=self.menu.describe()) if typed else ""),
+            envelope=(P.TYPED_ENVELOPE if typed else P.PROSE_ENVELOPE))
+
+    def _parse_and_validate_plan(self, con, raw: str, inbox_files: list[Path]):
+        unreachable = _transport_failed(raw)
         if unreachable:
-            events.emit(self.home, "planner_unreachable", cycle=ts, detail=p1[:300])
             plan = {"do_nothing": True, "tasks": [],
-                    "do_nothing_reason": f"THE PLANNER NEVER ANSWERED: {p1[:200]}"}
+                    "do_nothing_reason": f"THE PLANNER NEVER ANSWERED: {raw[:200]}"}
         else:
-            plan = parse_plan(p1) or {"do_nothing": True, "tasks": [],
-                                      "do_nothing_reason": "unparseable plan"}
-        # A schema can guarantee the plan's shape; only the engine can tell
-        # whether "nothing to do" is an honest lazy day or a missed shift, so
-        # the eligibility answer comes from here and never from the model.
+            plan = parse_plan(raw) or {"do_nothing": True, "tasks": [],
+                                       "do_nothing_reason": "unparseable plan"}
         work_available = bool(inbox_files) or bool(self.store.due_threads(
             con, cooldown_minutes=float(self.cfg.get("thread_cooldown_minutes", 0) or 0),
             limit=1))
-        plan, plan_complaints, false_no_op = validate_plan(
+        plan, complaints, false_no_op = validate_plan(
             plan, work_available=work_available,
             max_tasks=int(self.cfg.get("max_tasks_per_cycle", 8)),
             allow_text_tasks=bool(self.cfg.get("allow_text_tasks", True)),
             menu=self.menu, ruled_out=self._ruled_out(con))
         if unreachable:
-            # It said nothing because it was never asked. Whatever the
-            # validator concluded about that silence is not about the machine,
-            # and `false_no_op` in particular would blame it for a lazy day it
-            # did not take.
-            plan_complaints = [f"the planner never answered: {p1[:200]}"]
+            complaints = [f"the planner never answered: {raw[:200]}"]
             false_no_op = False
-        # A guard that only objects is not a floor. Watched live: with a
-        # standing order open and due, the planner declared the program "at a
-        # stalemate with no actionable path forward", the false-no-op check
-        # caught it, nothing changed, and the next cycle declared the same
-        # thing. The work stayed due, so the engine kept firing and kept
-        # refusing, which is a livelock at heartbeat speed dressed as an honest
-        # lazy day.
-        #
-        # So after a second consecutive refusal the wrapper stops asking. It
-        # takes the top due thread and files it as the task, verbatim. This is
-        # not the engine overruling judgment about WHETHER to work, which was
-        # never the model's to make (the gate decides that); it is the engine
-        # declining to accept "there is nothing to do" from a party that has
-        # already been shown there is.
-        # Supplied typed work outranks whatever the planner invented, not only
-        # a refusal. Watched live: once the grammar was fixed the planner
-        # happily authored its own tasks every cycle, so a fallback that fired
-        # only on an empty plan never fired at all, and three complete supplied
-        # tasks sat untouched for nine cycles while the machine invented and
-        # failed at its own versions of the same work.
-        #
-        # The queue is authority and the plan is a proposal. Work that came
-        # from outside, complete and due, is not competing with a guess.
-        if not plan.get("tasks") or self._typed_from_due_thread(con) is not None:
-            supplied = self._typed_from_due_thread(con)
-            if supplied is not None:
-                plan["tasks"] = [supplied]
-                plan["do_nothing"] = False
-                false_no_op = False
-                plan_complaints.append(
-                    "no task survived planning; a complete supplied task was due "
-                    "and was filed by the wrapper")
+        return plan, complaints, false_no_op, work_available, unreachable
 
+    def _apply_work_floors(self, con, plan, complaints, false_no_op):
+        supplied = self._typed_from_due_thread(con)
+        if supplied is not None:
+            displaced = len(plan.get("tasks") or [])
+            plan["tasks"] = [supplied]
+            plan["do_nothing"] = False
+            false_no_op = False
+            message = (f"{displaced} planner task(s) displaced by complete supplied work"
+                       if displaced else
+                       "no task survived planning; a complete supplied task was due "
+                       "and was filed by the wrapper")
+            complaints.append(message)
         if false_no_op and self._consecutive_no_ops(con) >= 1:
             forced = self._task_from_due_thread(con)
             if forced:
                 plan["tasks"] = [forced]
                 plan["do_nothing"] = False
                 false_no_op = False
-                plan_complaints.append(
+                complaints.append(
                     "second refusal in a row with work due: the top due thread "
                     "was filed as the task by the wrapper")
-        for c in plan_complaints:
-            print(f"[plan] {c}")
-        # The reasoning, not the log line: what it saw as due, what it decided
-        # to do about that, and every objection the wrapper raised to the
-        # decision. Read across a run, this is where drift becomes visible.
-        events.emit(self.home, "plan", cycle=ts, work_available=work_available,
-                    inbox=len(inbox_files), do_nothing=bool(plan.get("do_nothing")),
-                    do_nothing_reason=str(plan.get("do_nothing_reason", ""))[:300],
-                    learned=str(plan.get("learned", ""))[:400],
-                    tasks=[{"id": t.get("id"), "what": str(t.get("what", ""))[:200],
-                            "why": str(t.get("why", ""))[:200], "mode": t.get("mode"),
-                            "risk": t.get("risk")} for t in plan.get("tasks", [])],
-                    complaints=plan_complaints, false_no_op=false_no_op)
+        return plan, complaints, false_no_op
 
-        # A drop is spent by a cycle that ENGAGED with it. A cycle that
-        # wrongly declared there was nothing to do did not engage, and
-        # archiving the request anyway would let a weak planner quietly eat
-        # work by claiming a lazy day. Leave it in the queue for the next one.
-        n_inbox = 0 if false_no_op else self.inbox.consume(inbox_files, ts)
+    def _emit_plan(self, ts, phase: _PlanPhase) -> None:
+        for complaint in phase.complaints:
+            print(f"[plan] {complaint}")
+        plan = phase.plan
+        events.emit(
+            self.home, "plan", cycle=ts, work_available=phase.work_available,
+            inbox=len(phase.inbox_files), do_nothing=bool(plan.get("do_nothing")),
+            do_nothing_reason=str(plan.get("do_nothing_reason", ""))[:300],
+            learned=str(plan.get("learned", ""))[:400],
+            tasks=[{"id": task.get("id"), "what": str(task.get("what", ""))[:200],
+                    "why": str(task.get("why", ""))[:200], "mode": task.get("mode"),
+                    "risk": task.get("risk")} for task in plan.get("tasks", [])],
+            complaints=phase.complaints, false_no_op=phase.false_no_op)
 
+    def _plan_phase(self, con, ts, cdir) -> _PlanPhase:
+        inbox_section, inbox_files = self.inbox.read()
+        context, _ = self.harvest.build(con, {"inbox": inbox_section,
+                                              "mandates": self._standing()})
+        import os
+        os.environ["REVERIE_CYCLE"], os.environ["REVERIE_HOME"] = ts, str(self.home)
+        raw = self.planner.complete(
+            "", self._planning_prompt(context),
+            max_tokens=self.cfg["max_tool_turns"]["plan"] * 80)
+        (cdir / "plan.txt").write_text(raw, encoding="utf-8")
+        plan, complaints, false_no_op, work_available, unreachable = \
+            self._parse_and_validate_plan(con, raw, inbox_files)
+        if unreachable:
+            events.emit(self.home, "planner_unreachable", cycle=ts, detail=raw[:300])
+        plan, complaints, false_no_op = self._apply_work_floors(
+            con, plan, complaints, false_no_op)
+        phase = _PlanPhase(raw, plan, complaints, false_no_op, work_available,
+                           unreachable, context, inbox_files)
+        self._emit_plan(ts, phase)
+        return phase
+
+    def _execute_phase(self, con, ts, cdir, phase: _PlanPhase, text_only: bool):
         ledger: list[dict] = []
         pre = blast.snapshot(self.cfg["protected_paths"])
-        # The referee is read BEFORE the work and again after. What a cycle
-        # achieved is the difference between two readings of the world, and it
-        # is not available from anything the cycle says about itself.
         before = self.referee.state() if self.referee else {}
-        if not plan.get("do_nothing"):
-            for task in plan.get("tasks", []):
+        if not phase.plan.get("do_nothing"):
+            for task in phase.plan.get("tasks", []):
                 ledger.append(self._do_task(con, ts, cdir, task, text_only))
+        n_inbox = 0
+        if not phase.false_no_op and not phase.unreachable and ledger:
+            n_inbox = self.inbox.consume(phase.inbox_files, ts)
+        return _ExecutionPhase(ledger, pre, before, n_inbox)
 
-        # --- LEARN ---
+    def _learn_phase(self, cdir, context, ledger):
         ledger_txt = "\n".join(f"- {e['id']} [{e['status']}] {e['what'][:80]}" for e in ledger) or "(nothing to do)"
-        # LEARN is text. It was routed through the tool-running agent for most
-        # of this engine's life, and that silently deleted the entire phase:
-        # `run_session` does not return what the model wrote. It drives a loop
-        # under a forced step schema and returns a string it composes itself
-        # from the loop's verdict and the transcript, so the only blocks it can
-        # ever emit are RESULT and VERIFY. The prompt below asks for JOURNAL,
-        # REVIEW and LESSON; none of them had a path into the return value, and
-        # the greps under this call were searching a string that structurally
-        # could not contain them. Over one thousand three hundred cycles that
-        # produced zero lessons and one apparent review, and the review was a
-        # long `done` argument interpolated into VERIFY rather than a review at
-        # all. Nobody noticed, because a phase that returns nothing looks
-        # exactly like a phase with nothing to say.
-        #
-        # A review does not need tools. It needs the cycle it is reviewing,
-        # which is already in the prompt. Giving it tools was what handed the
-        # phase to an adapter whose contract outranked the prompt's.
         p3 = self.planner.complete("", P.LEARN.format(context=context, ledger=ledger_txt),
                                    max_tokens=self.cfg["learn_max_tokens"])
-        # Every phase leaves its transcript, tools or no tools. That rule was
-        # written after a file appeared in the working tree during a cycle and
-        # the only phase whose output was not on disk was this one, so what
-        # created it could not be answered from the record at all.
         (cdir / "learn.txt").write_text(p3, encoding="utf-8")
         journal = _grab("JOURNAL", p3) or p3[:1200]
         review = _grab("REVIEW", p3)
         lessons = [Lesson(*parts) for parts in
                    (_lesson_parts(l) for l in _grab_all("LESSON", p3)) if parts]
+        return _LearnPhase(p3, journal, review, lessons)
 
-        # The post snapshot happens after everything, including LEARN. LEARN no
-        # longer holds tools and so should not be able to move anything, which
-        # is a reason to keep watching it rather than to stop: a watch set that
-        # only covers the phases expected to write is not a watch set.
+    def _grade_phase(self, ts, phase: _PlanPhase, ledger, pre, before):
         touched = blast.diff(pre, blast.snapshot(self.cfg["protected_paths"]))
-
         if self.referee is not None:
             after = self.referee.state()
             moved = R.Referee.delta(before, after)
             grade = R.grade(moved,
                             attempted=bool([e for e in ledger
                                             if e["status"] in ("done", "failed")]),
-                            honest_no_op=bool(plan.get("do_nothing")) and not false_no_op)
+                            honest_no_op=bool(phase.plan.get("do_nothing")) and
+                            not phase.false_no_op)
             # A ledger that says done while the world did not move is the exact
             # shape of four separate A grades in the alpha. Recording the
             # disagreement is what turns it from a silent lie into a signal.
             claimed = [e for e in ledger if e["status"] == "done"]
             if claimed and not moved:
-                plan_complaints.append(
+                phase.complaints.append(
                     f"{len(claimed)} task(s) reported done and the referee did not "
                     "move; the ledger is not the score")
                 events.emit(self.home, "decoupled", cycle=ts,
@@ -514,22 +502,11 @@ class Engine:
         else:
             moved = {}
             grade = derive_grade(ledger)
+        return _GradePhase(grade, moved, touched)
+
+    def _persist_cycle(self, con, ts, plan, journal, review, lessons, grade):
         con.execute("INSERT OR REPLACE INTO journal (cycle_ts, body, created_at) VALUES (?,?,?)",
                     (ts, journal + (("\n\n[review]\n" + review) if review else ""), time.time()))
-        # A cycle that did nothing has nothing to teach. Evidence gates "done";
-        # it must also gate "learned", because a lesson is the one artifact
-        # that becomes permanent context at the highest priority and steers
-        # every later decision.
-        #
-        # Observed live, and the reason this exists: an early no-op cycle
-        # wrote "a lazy cycle with one small text task -> summarise instead of
-        # forcing tool work -> the working set stayed legible and cheap". That
-        # sentence then rode in every context and taught the engine to decline
-        # real work, so a defect became doctrine. Note the asymmetry: a FAILED
-        # cycle may still teach, because a failure is an event with content and
-        # a recorded dead end is worth more than a fresh idea. A no-op is not
-        # an event; "doing nothing was cheap" is a rationalisation wearing a
-        # lesson's clothes.
         if not plan.get("do_nothing"):
             for ls in lessons[:3]:
                 if all([ls.situation, ls.action, ls.outcome]):
@@ -545,22 +522,43 @@ class Engine:
         con.commit()
         con.close()
 
-        outcome = Outcome(when=now, action_class=ActionClass.NOTHING if plan.get("do_nothing") else ActionClass.NEEDS_TOOL,
-                          grade=grade, phase1=p1, phase2=p3, ledger=ledger, lessons=lessons, journal=journal,
-                          blast_radius=touched)
+    def _write_outcome(self, now, ts, cdir, phase, execution, learned, graded):
+        ledger = execution.ledger
+        lessons = learned.lessons
+        outcome = Outcome(when=now, action_class=ActionClass.NOTHING if phase.plan.get("do_nothing") else ActionClass.NEEDS_TOOL,
+                          grade=graded.grade, phase1=phase.raw, phase2=learned.raw,
+                          ledger=ledger, lessons=lessons, journal=learned.journal,
+                          blast_radius=graded.touched)
         (cdir / "outcome.json").write_text(json.dumps({
-            "ts": ts, "grade": grade, "plan": plan, "ledger": ledger,
+            "ts": ts, "grade": graded.grade, "plan": phase.plan, "ledger": ledger,
             "brain": self._brain(),
-            "blast_radius": touched, "inbox_consumed": n_inbox,
-            "plan_complaints": plan_complaints, "false_no_op": false_no_op,
-            "referee_before": before, "referee_moved": moved,
+            "blast_radius": graded.touched,
+            "inbox_consumed": execution.inbox_consumed,
+            "plan_complaints": phase.complaints, "false_no_op": phase.false_no_op,
+            "referee_before": execution.before, "referee_moved": graded.moved,
             "lessons": [l.__dict__ for l in lessons]}, ensure_ascii=False, indent=2), encoding="utf-8")
-        events.emit(self.home, "cycle", cycle=ts, grade=grade, moved=moved,
+        events.emit(self.home, "cycle", cycle=ts, grade=graded.grade,
+                    moved=graded.moved,
                     statuses=[e["status"] for e in ledger],
-                    blast=len(touched), inbox_consumed=n_inbox,
+                    blast=len(graded.touched),
+                    inbox_consumed=execution.inbox_consumed,
                     lessons=[f"{l.situation} -> {l.action} -> {l.outcome}" for l in lessons],
-                    journal=journal[:600])
+                    journal=learned.journal[:600])
         return outcome
+
+    def run_cycle(self, now: datetime | None = None, text_only: bool = False) -> Outcome:
+        now = now or datetime.now()
+        con, ts, cdir = self._open_cycle(now)
+        phase = self._plan_phase(con, ts, cdir)
+        execution = self._execute_phase(con, ts, cdir, phase, text_only)
+        learned = self._learn_phase(cdir, phase.context, execution.ledger)
+        graded = self._grade_phase(
+            ts, phase, execution.ledger, execution.pre, execution.before)
+        self._persist_cycle(
+            con, ts, phase.plan, learned.journal, learned.review,
+            learned.lessons, graded.grade)
+        return self._write_outcome(now, ts, cdir, phase, execution, learned,
+                                   graded)
 
     # -- which brain answered ------------------------------------------------
     def _brain(self) -> dict:
@@ -625,7 +623,7 @@ class Engine:
             pass  # the ledger entry is worth having and never worth a crash
 
     # -- one task -----------------------------------------------------------
-    def _do_task(self, con, ts, cdir, task, text_only) -> dict:
+    def _task_context(self, ts, task) -> _TaskContext:
         tid = str(task.get("id", "?"))
         # A typed task has no prose to run on, and that is the point: the
         # instruction the executor sees is generated from the fields rather
@@ -633,7 +631,7 @@ class Engine:
         # or a mangled value to hide in.
         what = (self.menu.render(task) if self.menu and self.menu.get(task)
                 else task.get("what", ""))
-        wrisk, wpat = self._wrapper_risk(task)
+        wrapper_risk, pattern = self._wrapper_risk(task)
         # Who is allowed to call this risky. For TYPED work: the menu, which
         # decided once for the whole kind, and the wrapper, which reads the
         # task's stated intent. Not the planner. It filled that field with
@@ -649,186 +647,202 @@ class Engine:
         t = self.menu.get(task) if self.menu is not None else None
         if t is not None:
             typed_risk = str(getattr(t, "risk", "SAFE")).upper()
-            final = "RISKY" if "RISKY" in (wrisk, typed_risk) else "SAFE"
-            if declared == "RISKY" and final == "SAFE":
+            risk = "RISKY" if "RISKY" in (wrapper_risk, typed_risk) else "SAFE"
+            if declared == "RISKY" and risk == "SAFE":
                 # Recorded rather than obeyed, so the habit stays measurable.
                 events.emit(self.home, "risk_overridden", cycle=ts, task=tid,
-                            type=t.name, declared=declared, applied=final)
+                            type=t.name, declared=declared, applied=risk)
         else:
-            final = "RISKY" if "RISKY" in (wrisk, declared) else "SAFE"
-        if final == "RISKY":
-            self._file_approval(con, ts, task, task.get("risk_reason") or wpat)
-            self.store.add_thread(con, f"parked (awaiting approval): {what[:100]}",
-                                  json.dumps(task, ensure_ascii=False), kind="approval",
-                                  created_cycle=ts, defer=True, unique=True)
-            why = (f"parked awaiting approval, because this task was classified "
-                   f"RISKY ({task.get('risk_reason') or wpat or 'no reason given'}). "
-                   "It was never run. Approvals are opened by a person and "
-                   "nothing happens until one is.")
-            self._note_task(con, ts, tid, what, "parked", why)
-            return {"id": tid, "status": "parked", "what": what, "why": why}
-        # Routing, before any work is attempted. The model has already had its
-        # say (it wrote the task); this is the wrapper deciding who does it,
-        # and the reason is quoted from the task's own words so the decision
-        # can be argued with later.
-        # Already true before we started? Then there is no work here, and
-        # spending a cycle to discover that is how three false completions and
-        # fifty wasted attempts happened in one run.
-        if self.menu is not None:
-            done_already, why_already = self.menu.already_done(task, self.home)
-            if done_already:
-                if task.get("thread"):
-                    self.store.close_thread(con, task["thread"],
-                                            f"already satisfied: {why_already}")
-                events.emit(self.home, "already_done", cycle=ts, task=tid,
-                            why=why_already[:200], what=what[:150])
-                why = f"already true before this cycle: {why_already}"
-                self._note_task(con, ts, tid, what, "skipped", why)
-                return {"id": tid, "status": "skipped", "what": what,
-                        "verify": why, "why": why}
+            risk = "RISKY" if "RISKY" in (wrapper_risk, declared) else "SAFE"
+        return _TaskContext(task, tid, what, risk, pattern)
 
-        where, why = route(task, self.cfg)
+    def _park_risky(self, con, ts, ctx: _TaskContext) -> dict | None:
+        if ctx.risk != "RISKY":
+            return None
+        task, tid, what = ctx.task, ctx.tid, ctx.what
+        reason = task.get("risk_reason") or ctx.risk_pattern
+        self._file_approval(con, ts, task, reason)
+        self.store.add_thread(con, f"parked (awaiting approval): {what[:100]}",
+                              json.dumps(task, ensure_ascii=False), kind="approval",
+                              created_cycle=ts, defer=True, unique=True)
+        why = (f"parked awaiting approval, because this task was classified "
+               f"RISKY ({reason or 'no reason given'}). It was never run. "
+               "Approvals are opened by a person and nothing happens until one is.")
+        self._note_task(con, ts, tid, what, "parked", why)
+        return {"id": tid, "status": "parked", "what": what, "why": why}
+
+    def _skip_already_done(self, con, ts, ctx: _TaskContext) -> dict | None:
+        if self.menu is None:
+            return None
+        task, tid, what = ctx.task, ctx.tid, ctx.what
+        done_already, why_already = self.menu.already_done(task, self.home)
+        if not done_already:
+            return None
+        if task.get("thread"):
+            self.store.close_thread(con, task["thread"],
+                                    f"already satisfied: {why_already}")
+        events.emit(self.home, "already_done", cycle=ts, task=tid,
+                    why=why_already[:200], what=what[:150])
+        why = f"already true before this cycle: {why_already}"
+        self._note_task(con, ts, tid, what, "skipped", why)
+        return {"id": tid, "status": "skipped", "what": what,
+                "verify": why, "why": why}
+
+    def _delegate_task(self, con, ts, ctx: _TaskContext, why: str) -> dict | None:
+        task, tid, what = ctx.task, ctx.tid, ctx.what
+        job_id, note = self.delegate.file(task, cycle=ts)
+        events.emit(self.home, "route", cycle=ts, task=tid, where=DELEGATE,
+                    reason=why, job=job_id, note=note, what=what[:200])
+        if job_id:
+            self.store.add_thread(con, f"awaiting job {job_id}: {what[:80]}",
+                                  json.dumps({"job": job_id, "task": task},
+                                             ensure_ascii=False),
+                                  kind="delegated", created_cycle=ts,
+                                  defer=True, unique=True)
+            receipt = f"job {job_id} filed: {why}"
+            self._note_task(con, ts, tid, what, "delegated", receipt)
+            return {"id": tid, "status": "delegated", "what": what,
+                    "verify": receipt, "why": receipt}
+        note = str(note)
+        if note.startswith("solved:"):
+            if task.get("thread"):
+                self.store.close_thread(con, task["thread"], note)
+            events.emit(self.home, "solved", cycle=ts, task=tid,
+                        note=note, what=what[:200])
+            self._note_task(con, ts, tid, what, "skipped", note)
+            return {"id": tid, "status": "skipped", "what": what,
+                    "verify": note, "why": note}
+        if note.startswith("defer:") or "concurrency cap" in note:
+            self.store.add_thread(con, f"waiting on a free worker: {what[:80]}",
+                                  json.dumps(task, ensure_ascii=False),
+                                  kind="delegated", created_cycle=ts,
+                                  defer=True, unique=True)
+            receipt = f"not attempted locally: {note}"
+            self._note_task(con, ts, tid, what, "deferred", receipt)
+            return {"id": tid, "status": "deferred", "what": what,
+                    "verify": receipt, "why": receipt}
+        print(f"[route] delegation unavailable ({note}); running locally")
+        return None
+
+    def _route_task(self, con, ts, ctx: _TaskContext) -> dict | None:
+        where, why = route(ctx.task, self.cfg)
         if where == DELEGATE and self.delegate is not None:
-            job_id, note = self.delegate.file(task, cycle=ts)
-            events.emit(self.home, "route", cycle=ts, task=tid, where=where,
-                        reason=why, job=job_id, note=note, what=what[:200])
-            if job_id:
-                # Deferred, so the next tick does not immediately re-plan work
-                # that is already out for answer. The thread is the obligation:
-                # while it is open the job is not forgotten, and when the answer
-                # lands the cycle that reads it has the context to use it.
-                self.store.add_thread(con, f"awaiting job {job_id}: {what[:80]}",
-                                      json.dumps({"job": job_id, "task": task},
-                                                 ensure_ascii=False),
-                                      kind="delegated", created_cycle=ts,
-                                      defer=True, unique=True)
-                return {"id": tid, "status": "delegated", "what": what,
-                        "verify": f"job {job_id} filed: {why}"}
-            # Two different failures wear the same empty job id, and treating
-            # them alike is wrong in one direction or the other. A delegate
-            # that is DOWN (unconfigured, unreachable) should not stop the
-            # engine: doing the work badly here beats not doing it at all. A
-            # delegate that is merely BUSY should not make the engine attempt
-            # the exact thing it delegated the task to avoid; the work waits,
-            # because the reason it was routed out has not changed.
-            # Already answered. Not a failure and not work: the question has
-            # been asked, accepted and written into the record, so the only
-            # correct action is to stop carrying it. Ten identical jobs went
-            # to a human collaborator before this existed.
-            if str(note).startswith("solved:"):
-                if task.get("thread"):
-                    self.store.close_thread(con, task["thread"], note)
-                events.emit(self.home, "solved", cycle=ts, task=tid,
-                            note=note, what=what[:200])
-                self._note_task(con, ts, tid, what, "skipped", str(note))
-                return {"id": tid, "status": "skipped", "what": what,
-                        "verify": note, "why": str(note)}
-            if str(note).startswith("defer:") or "concurrency cap" in str(note):
-                self.store.add_thread(con, f"waiting on a free worker: {what[:80]}",
-                                      json.dumps(task, ensure_ascii=False),
-                                      kind="delegated", created_cycle=ts,
-                                      defer=True, unique=True)
-                return {"id": tid, "status": "deferred", "what": what,
-                        "verify": f"not attempted locally: {note}"}
-            print(f"[route] delegation unavailable ({note}); running locally")
-        elif where == DELEGATE:
-            events.emit(self.home, "route", cycle=ts, task=tid, where="local",
+            return self._delegate_task(con, ts, ctx, why)
+        if where == DELEGATE:
+            events.emit(self.home, "route", cycle=ts, task=ctx.tid,
+                        where="local",
                         reason=f"would delegate ({why}) but no delegate is configured",
-                        what=what[:200])
+                        what=ctx.what[:200])
+        return None
 
-        if text_only and task.get("mode") == "tool":
-            self.store.add_thread(con, f"deferred (text-only budget): {what[:100]}", "",
-                                  created_cycle=ts, defer=True, unique=True)
-            return {"id": tid, "status": "skipped", "what": what}
+    def _skip_text_only(self, con, ts, ctx: _TaskContext,
+                        text_only: bool) -> dict | None:
+        if not text_only or ctx.task.get("mode") != "tool":
+            return None
+        self.store.add_thread(
+            con, f"deferred (text-only budget): {ctx.what[:100]}", "",
+            created_cycle=ts, defer=True, unique=True)
+        why = "not attempted locally: text-only budget"
+        self._note_task(con, ts, ctx.tid, ctx.what, "skipped", why)
+        return {"id": ctx.tid, "status": "skipped", "what": ctx.what,
+                "verify": why, "why": why}
 
+    def _start_task(self, con, ts, cdir, ctx: _TaskContext) -> None:
+        task = ctx.task
         if task.get("thread"):
             try:
                 self.store.mark_thread_attempted(con, int(task["thread"]))
             except (TypeError, ValueError):
-                pass  # a malformed thread id is the planner's problem, not a crash
-        con.execute("INSERT INTO tasks (cycle_ts, task_id, what, mode, risk, status, started_at) "
-                    "VALUES (?,?,?,?,?,'started',?)", (ts, tid, what, task.get("mode"), final, time.time()))
+                pass
+        con.execute(
+            "INSERT INTO tasks (cycle_ts, task_id, what, mode, risk, status, started_at) "
+            "VALUES (?,?,?,?,?,'started',?)",
+            (ts, ctx.tid, ctx.what, task.get("mode"), ctx.risk, time.time()))
         con.commit()
-        # The typed task itself, on disk, before the session that must satisfy
-        # it. Two reasons, and the second is the load-bearing one.
-        #
-        # For the record: the fields were only ever recoverable from the plan
-        # blob, so reading what a cycle was actually asked to do meant parsing
-        # the planner's output rather than reading the task.
-        #
-        # For the tools: a task type's fields are known to the harness and were
-        # nonetheless required to travel through the executor, which had to
-        # retype them into a tool call. That is the one operation this class of
-        # model has been measured unable to do. Watched live, an executor that
-        # had just computed the right answer wrote the source filename back
-        # with a letter missing and dropped three fields on the way. A tool can
-        # now read the task it is being used to satisfy, and ask the model only
-        # for what the harness cannot know.
         try:
-            (cdir / f"task_{tid}.json").write_text(
+            (cdir / f"task_{ctx.tid}.json").write_text(
                 json.dumps(task, ensure_ascii=False, indent=1), encoding="utf-8")
         except (OSError, TypeError):
-            pass  # the record is worth having and never worth a crash
+            pass
+
+    def _run_task(self, ts, ctx: _TaskContext) -> str:
+        task = ctx.task
         if task.get("mode") == "text":
-            raw = self.planner.complete("", P.EXECUTE_TEXT_ONLY.format(context="", what=what), max_tokens=1200)
-        else:
-            raw = self.agent.run_session(P.EXECUTE.format(context="", task_id=tid, what=what, why=task.get("why", ""),
-                                                          turn_cap=self.cfg["max_tool_turns"]["execute"]),
-                                         cwd=str(self.home), env=self._cycle_env(ts),
-                                         turn_cap=self.cfg["max_tool_turns"]["execute"])
-        (cdir / f"task_{tid}.txt").write_text(raw, encoding="utf-8")
+            return self.planner.complete(
+                "", P.EXECUTE_TEXT_ONLY.format(context="", what=ctx.what),
+                max_tokens=1200)
+        return self.agent.run_session(
+            P.EXECUTE.format(context="", task_id=ctx.tid, what=ctx.what,
+                             why=task.get("why", ""),
+                             turn_cap=self.cfg["max_tool_turns"]["execute"]),
+            cwd=str(self.home), env=self._cycle_env(ts),
+            turn_cap=self.cfg["max_tool_turns"]["execute"])
+
+    def _handle_failure(self, con, ts, ctx: _TaskContext, verify: str) -> None:
+        title = f"resume failed task: {ctx.what[:100]}"
+        limit = int(self.cfg.get("max_task_attempts", 3))
+        tried = self.store.attempts(con, title)
+        if tried + 1 < limit:
+            self.store.add_thread(con, title, verify[:400], created_cycle=ts,
+                                  defer=True, unique=True)
+            self.store.bump_attempt(con, title)
+            return
+        self.store.add_thread(
+            con, f"dead end: {ctx.what[:100]}",
+            f"abandoned after {tried + 1} attempts. Last failure: {verify[:400]}",
+            kind="deadend", created_cycle=ts, defer=True, unique=True)
+        for row in con.execute(
+                "SELECT id FROM threads WHERE title=? AND status='open'",
+                (title,)).fetchall():
+            self.store.close_thread(con, row[0],
+                                    f"abandoned after {tried + 1} attempts")
+        events.emit(self.home, "abandoned", cycle=ts, task=ctx.tid,
+                    attempts=tried + 1, what=ctx.what[:200], last=verify[:300])
+
+    def _finish_task(self, con, ts, ctx: _TaskContext, raw: str) -> dict:
         result = (_grab("RESULT", raw) or "failed").lower()
         verify = _grab("VERIFY", raw)
         status = result if result in ("done", "failed", "parked") else "failed"
         if status == "done" and not verify:
-            status = "failed"  # no evidence, no done
+            status = "failed"
         if status == "done" and self.menu is not None:
-            # Evidence gates existence; this gates identity. The claim is now
-            # examined against the world rather than against itself, which is
-            # the difference between a receipt saying a file was written and a
-            # check that the file is the thing that was asked for.
-            ok, why = self.menu.check(task, verify, self.home)
+            ok, why = self.menu.check(ctx.task, verify, self.home)
             if not ok:
                 status = "failed"
                 verify = f"postcondition failed: {why}\n\n{verify}"
-                events.emit(self.home, "postcondition", cycle=ts, task=tid,
+                events.emit(self.home, "postcondition", cycle=ts, task=ctx.tid,
                             passed=False, why=why[:300])
-        con.execute("UPDATE tasks SET status=?, ended_at=?, result=? WHERE cycle_ts=? AND task_id=? AND status='started'",
-                    (status, time.time(), verify[:2000], ts, tid))
+        con.execute(
+            "UPDATE tasks SET status=?, ended_at=?, result=? "
+            "WHERE cycle_ts=? AND task_id=? AND status='started'",
+            (status, time.time(), verify[:2000], ts, ctx.tid))
         con.commit()
         if status == "failed":
-            # A retry is a bet that something has changed. Nothing has, when
-            # the same task fails the same way, and this engine will happily
-            # take that bet forever: watched live, one unfinishable task was
-            # re-planned twenty-three times in two hours, each failure filing
-            # the follow-up that produced the next attempt.
-            #
-            # So attempts are counted, and past the limit the work stops being
-            # work and becomes a recorded dead end. That is not giving up: a
-            # ruled-out branch written down is worth more than a fresh idea,
-            # because only one of the two prevents the same two hours happening
-            # again tomorrow.
-            title = f"resume failed task: {what[:100]}"
-            limit = int(self.cfg.get("max_task_attempts", 3))
-            tried = self.store.attempts(con, title)
-            if tried + 1 >= limit:
-                self.store.add_thread(
-                    con, f"dead end: {what[:100]}",
-                    f"abandoned after {tried + 1} attempts. Last failure: {verify[:400]}",
-                    kind="deadend", created_cycle=ts, defer=True, unique=True)
-                for row in con.execute("SELECT id FROM threads WHERE title=? AND status='open'",
-                                       (title,)).fetchall():
-                    self.store.close_thread(con, row[0], f"abandoned after {tried + 1} attempts")
-                events.emit(self.home, "abandoned", cycle=ts, task=tid,
-                            attempts=tried + 1, what=what[:200], last=verify[:300])
-            else:
-                self.store.add_thread(con, title, verify[:400],
-                                      created_cycle=ts, defer=True, unique=True)
-                self.store.bump_attempt(con, title)
-        events.emit(self.home, "task", cycle=ts, task=tid, status=status,
-                    mode=task.get("mode"), what=what[:200], verify=verify[:400],
-                    steps=raw.count("\n[") or None)
-        return {"id": tid, "status": status, "what": what, "verify": verify[:200]}
+            self._handle_failure(con, ts, ctx, verify)
+        events.emit(self.home, "task", cycle=ts, task=ctx.tid, status=status,
+                    mode=ctx.task.get("mode"), what=ctx.what[:200],
+                    verify=verify[:400], steps=raw.count("\n[") or None)
+        return {"id": ctx.tid, "status": status, "what": ctx.what,
+                "verify": verify[:200]}
+
+    def _do_task(self, con, ts, cdir, task, text_only) -> dict:
+        ctx = self._task_context(ts, task)
+        decision = self._park_risky(con, ts, ctx)
+        if decision is not None:
+            return decision
+        decision = self._skip_already_done(con, ts, ctx)
+        if decision is not None:
+            return decision
+        decision = self._route_task(con, ts, ctx)
+        if decision is not None:
+            return decision
+        decision = self._skip_text_only(con, ts, ctx, text_only)
+        if decision is not None:
+            return decision
+        self._start_task(con, ts, cdir, ctx)
+        raw = self._run_task(ts, ctx)
+        (cdir / f"task_{ctx.tid}.txt").write_text(raw, encoding="utf-8")
+        return self._finish_task(con, ts, ctx, raw)
 
     def _file_approval(self, con, ts, task, reason):
         con.execute("INSERT INTO approvals (cycle_ts, artifact, reasoning, status, filed_at, expires_at) "

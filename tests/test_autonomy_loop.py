@@ -93,12 +93,22 @@ def _ledger(runner):
     return json.loads((latest / "outcome.json").read_text())["ledger"]
 
 
+def _task_statuses(runner):
+    con = runner.store.connect()
+    try:
+        return [row[0] for row in con.execute(
+            "SELECT status FROM tasks ORDER BY started_at")]
+    finally:
+        con.close()
+
+
 def test_the_engine_delegates_without_being_told_to(tmp_path):
     r = _runner(tmp_path, {"tasks": [dict(AUTHORING)], "do_nothing": False})
     _drop(r)
     r.tick()
     assert len(SpyDelegate.filed) == 1
     assert _ledger(r)[0]["status"] == "delegated"
+    assert _task_statuses(r) == ["delegated"]
 
 
 def test_work_it_can_do_is_not_handed_away(tmp_path):
@@ -167,4 +177,16 @@ def test_a_busy_delegate_defers_rather_than_failing_locally(tmp_path):
     _drop(r)
     r.tick()
     assert _ledger(r)[0]["status"] == "deferred"
+    assert _task_statuses(r) == ["deferred"]
     delegates.REGISTRY["spy"] = SpyDelegate
+
+
+def test_text_only_budget_skip_is_durable(tmp_path):
+    r = _runner(tmp_path, {"tasks": [dict(LOCAL_TASK)], "do_nothing": False})
+    _drop(r)
+
+    outcome = r.engine.run_cycle(text_only=True)
+
+    assert outcome.ledger[0]["status"] == "skipped"
+    assert "text-only budget" in outcome.ledger[0]["why"]
+    assert _task_statuses(r) == ["skipped"]

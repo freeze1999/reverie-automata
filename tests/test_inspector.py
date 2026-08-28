@@ -78,3 +78,17 @@ def test_unknown_tool_shapes(tmp_path):
     assert i.classify("browser_snapshot", {})[0] == "allow"
     assert i.classify("delete_record", {})[0] == "block"    # write verb
     assert i.classify("upload_artifact", {})[0] == "block"
+
+
+def test_tool_name_aliases_cannot_bypass_capability_checks(tmp_path):
+    i = insp(tmp_path)
+    secret = str(tmp_path / "secret.env")
+    assert i.classify("run_terminal_cmd", {"command": "sudo rm -rf /"})[0] == "block"
+    assert i.classify("WriteFile", {"path": secret})[0] == "block"
+    assert i.classify("filesystem.save", {"path": secret})[0] == "block"
+    assert i.classify("publishArtifact", {})[0] == "block"
+
+
+def test_unrecognized_neutral_names_preserve_the_documented_allow_default(tmp_path):
+    i = insp(tmp_path)
+    assert i.classify("custom_probe", {}) == ("allow", "")

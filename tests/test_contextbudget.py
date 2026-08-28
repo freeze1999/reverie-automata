@@ -91,6 +91,20 @@ def test_an_unreachable_planner_is_not_accused_of_a_false_lazy_day(tmp_path):
     assert _outcome(r)["false_no_op"] is False
 
 
+def test_an_unreachable_planner_does_not_consume_a_pending_drop(tmp_path):
+    """Transport failure is not engagement: the request must remain retryable."""
+    r = _runner(tmp_path)
+    box = r.engine.inbox
+    box.dir.mkdir(parents=True, exist_ok=True)
+    (box.dir / "req.md").write_text("please handle this")
+
+    r.tick()
+
+    out = _outcome(r)
+    assert out["inbox_consumed"] == 0
+    assert [p.name for p in box.pending()] == ["req.md"]
+
+
 def test_the_silence_is_announced_as_an_event(tmp_path):
     r = _runner(tmp_path)
     r.tick()

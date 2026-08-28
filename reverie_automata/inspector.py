@@ -41,7 +41,14 @@ _READ_SHAPE = re.compile(r"^(read|get|list|show|view|fetch|browse|browser|snapsh
                          r"_(search|read|view|list|get|snapshot|status)$", re.I)
 _CAP_HINT = re.compile(r"(?:^|_)(write|edit|patch|append|delete|remove|rename|mkdir|upload|"
                        r"deploy|install|exec|execute|push|send|post|email|overwrite|create|"
-                       r"move|put)(?:_|$)", re.I)
+                       r"move|put|save|sync|publish)(?:_|$)", re.I)
+_SHELL_SHAPE = re.compile(r"(?:^|_)(terminal|shell|bash|cmd|command|exec|execute)(?:_|$)", re.I)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _normalize_tool_name(name: str) -> str:
+    split = _CAMEL_BOUNDARY.sub("_", str(name or ""))
+    return re.sub(r"[^A-Za-z0-9]+", "_", split).strip("_").lower()
 
 
 def _shlex(s: str) -> list[str]:
@@ -71,61 +78,96 @@ class Inspector:
             return True  # unresolvable -> fail closed
         return any(rp == b or str(rp).startswith(str(b) + os.sep) for b in self.protected)
 
+    def _classify_write(self, tn: str, args: dict[str, Any]) -> tuple[str, str]:
+        for key in WRITE_TOOLS[tn]:
+            if args.get(key) and self._is_protected(args[key]):
+                return "block", f"write to protected path: {args[key]}"
+        return "allow", ""
+
+    def _classify_message(self, args: dict[str, Any]) -> tuple[str, str]:
+        recipient = str(args.get("recipient") or args.get("to") or
+                        args.get("chat_id") or args.get("channel") or "")
+        if recipient and recipient in self.recipients:
+            return "allow", ""
+        return "block", f"message to unverified recipient: {recipient or 'unknown'}"
+
+    @staticmethod
+    def _restricted_command(cmd: str) -> str:
+        for pattern in _CMD_BLOCK:
+            if re.search(pattern, cmd):
+                return f"restricted command ({pattern}): {cmd[:120]}"
+        return ""
+
+    def _blocked_egress(self, cmd: str) -> str:
+        if not re.search(_EGRESS, cmd):
+            return ""
+        domain = re.search(r"https?://([^/\s'\"]+)", cmd)
+        if domain and any(domain.group(1).endswith(item) for item in self.egress):
+            return ""
+        return f"raw egress not allowlisted: {cmd[:120]}"
+
+    def _blocked_recursive_delete(self, cmd: str) -> str:
+        if not re.search(_RM_R, cmd):
+            return ""
+        for match in re.finditer(r"\brm\b(?:\s+-\S+)*\s+(.+?)(?:;|\||&|$)", cmd):
+            reason = self._check_delete_targets(cmd, _shlex(match.group(1)))
+            if reason:
+                return reason
+        return ""
+
+    def _check_delete_targets(self, cmd: str, targets: list[str]) -> str:
+        for token in targets:
+            if token.startswith("-"):
+                continue
+            if any(mark in token for mark in ("$", "`", "*", "?", "..")):
+                return f"unresolvable rm target: {cmd[:120]}"
+            path = os.path.expanduser(token)
+            path = path if os.path.isabs(path) else str(self.home / path)
+            try:
+                resolved = str(Path(path).resolve())
+            except Exception:
+                return f"unresolvable rm target: {cmd[:120]}"
+            if not (resolved == str(self.home) or resolved.startswith(str(self.home) + os.sep)):
+                return f"recursive delete outside home: {cmd[:120]}"
+        return ""
+
+    def _blocked_file_mutation(self, cmd: str) -> str:
+        targets = [target for target in _redirect_targets(cmd) if target != "/dev/null"]
+        for target in targets:
+            if any(mark in target for mark in ("$", "`", "*", "?")):
+                return f"unresolvable redirect target: {cmd[:120]}"
+            path = os.path.expanduser(target)
+            path = path if os.path.isabs(path) else str(self.home / path)
+            if self._is_protected(path):
+                return f"file redirect writes protected path {path}"
+        if targets or re.search(_MUTATORS, cmd):
+            for path in re.findall(r"[~/][\w.@/~-]+", cmd):
+                if self._is_protected(path):
+                    return f"mutating command touches protected path {path}"
+        return ""
+
+    def _classify_shell(self, args: dict[str, Any]) -> tuple[str, str]:
+        cmd = str(args.get("command") or args.get("cmd") or args.get("input") or "")
+        checks = (self._restricted_command, self._blocked_egress,
+                  self._blocked_recursive_delete, self._blocked_file_mutation)
+        for check in checks:
+            reason = check(cmd)
+            if reason:
+                return "block", reason
+        return "allow", ""
+
     def classify(self, tool_name: str, args: dict[str, Any] | None) -> tuple[str, str]:
         args = args if isinstance(args, dict) else {}
-        tn = tool_name or ""
+        tn = _normalize_tool_name(tool_name)
 
         if tn in WRITE_TOOLS:
-            for k in WRITE_TOOLS[tn]:
-                if args.get(k) and self._is_protected(args[k]):
-                    return "block", f"write to protected path: {args[k]}"
-            return "allow", ""
+            return self._classify_write(tn, args)
 
         if tn in MSG_TOOLS:
-            r = str(args.get("recipient") or args.get("to") or args.get("chat_id") or args.get("channel") or "")
-            return ("allow", "") if r and r in self.recipients else ("block", f"message to unverified recipient: {r or 'unknown'}")
+            return self._classify_message(args)
 
-        if tn in SHELL_TOOLS:
-            cmd = str(args.get("command") or args.get("cmd") or args.get("input") or "")
-            for pat in _CMD_BLOCK:
-                if re.search(pat, cmd):
-                    return "block", f"restricted command ({pat}): {cmd[:120]}"
-            if re.search(_EGRESS, cmd):
-                dom = re.search(r"https?://([^/\s'\"]+)", cmd)
-                if not (dom and any(dom.group(1).endswith(d) for d in self.egress)):
-                    return "block", f"raw egress not allowlisted: {cmd[:120]}"
-            if re.search(_RM_R, cmd):
-                for m in re.finditer(r"\brm\b(?:\s+-\S+)*\s+(.+?)(?:;|\||&|$)", cmd):
-                    for tok in _shlex(m.group(1)):
-                        if tok.startswith("-"):
-                            continue
-                        if any(x in tok for x in ("$", "`", "*", "?", "..")):
-                            return "block", f"unresolvable rm target: {cmd[:120]}"
-                        rp = os.path.expanduser(tok)
-                        rp = rp if os.path.isabs(rp) else str(self.home / rp)
-                        try:
-                            rp = str(Path(rp).resolve())
-                        except Exception:
-                            return "block", f"unresolvable rm target: {cmd[:120]}"
-                        if not (rp == str(self.home) or rp.startswith(str(self.home) + os.sep)):
-                            return "block", f"recursive delete outside home: {cmd[:120]}"
-            redirects = _redirect_targets(cmd)
-            file_redirect = False
-            for target in redirects:
-                if target == "/dev/null":
-                    continue
-                file_redirect = True
-                if any(x in target for x in ("$", "`", "*", "?")):
-                    return "block", f"unresolvable redirect target: {cmd[:120]}"
-                rp = os.path.expanduser(target)
-                rp = rp if os.path.isabs(rp) else str(self.home / rp)
-                if self._is_protected(rp):
-                    return "block", f"file redirect writes protected path {rp}"
-            if file_redirect or re.search(_MUTATORS, cmd):
-                for p in re.findall(r"[~/][\w.@/~-]+", cmd):
-                    if self._is_protected(p):
-                        return "block", f"mutating command touches protected path {p}"
-            return "allow", ""
+        if tn in SHELL_TOOLS or _SHELL_SHAPE.search(tn):
+            return self._classify_shell(args)
 
         if tn in READ_SAFE or _READ_SHAPE.search(tn):
             return "allow", ""
