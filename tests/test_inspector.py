@@ -39,6 +39,8 @@ def test_shell_redirections_distinguish_file_writes_from_fd_plumbing(tmp_path):
         f"grep x {secret} 2>&1",
         f"grep x {secret} >&2",
         f"grep x {secret} &>/dev/null",
+        f"grep -n '>{{1,2}}' {secret}",
+        f'printf "literal > and >>"; cat {secret}',
     ]:
         assert i.classify("terminal", {"command": cmd})[0] == "allow", cmd
 
@@ -56,6 +58,16 @@ def test_shell_redirections_distinguish_file_writes_from_fd_plumbing(tmp_path):
         "echo x > secret.env",
         'echo x > "$HOME/secret.env"',
         'echo x 2>&"$OUTPUT_FD"',
+    ]:
+        assert i.classify("terminal", {"command": cmd})[0] == "block", cmd
+
+
+def test_nested_shell_is_not_misparsed_as_safe_outer_text(tmp_path):
+    i = insp(tmp_path)
+    secret = tmp_path / "secret.env"
+    for cmd in [
+        f"sh -c 'echo x > {secret}'",
+        f'bash -c "printf x >> {secret}"',
     ]:
         assert i.classify("terminal", {"command": cmd})[0] == "block", cmd
 

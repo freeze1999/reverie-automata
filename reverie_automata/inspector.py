@@ -28,14 +28,12 @@ READ_SAFE = {"read_file", "list_dir", "ls", "grep", "glob", "search", "web_searc
 
 _CMD_BLOCK = (r"\bsudo\b", r"\bsystemctl\b", r"\bcrontab\b", r"\bpip3?\s+install\b",
               r"\bapt(-get)?\s+install\b", r"\bnpm\s+install\s+-g\b", r"\|\s*(ba)?sh\b",
+              r"\b(?:sh|bash)\s+-c\b",
               r"\bchmod\s+-?R?\s*777\b", r"\bgit\s+push\b", r"\bmkfs\b", r"\bshutdown\b",
               r"\breboot\b", r"\bdd\b[^|]*of=/dev/")
 _EGRESS = r"\b(curl|wget)\b[^|;&]*(\s-(d|F|T|X\s*(POST|PUT|DELETE))|--data|--upload-file|--form)"
 _RM_R = r"\brm\s+(?:-\w*r\w*)"
 _MUTATORS = r"(\btee\b|\bsed\s+-i\b|\bmv\b|\bcp\b|\brm\b|\bchmod\b|\bchown\b|\btruncate\b)"
-_FILE_REDIRECT = re.compile(
-    r"(?<![<>])(?:(?:[0-9]+|&)?(?:>>|>\||>|<>)\s*(?!&)([^\s;|&]+)"
-    r"|(?:[0-9]+)?>&\s*(?![0-9]+(?:[\s;|&]|$)|-(?:[\s;|&]|$))([^\s;|&]+))")
 _READ_SHAPE = re.compile(r"^(read|get|list|show|view|fetch|browse|browser|snapshot|search|"
                          r"find|grep|glob|scan|inspect|describe|status|check)_?|"
                          r"_(search|read|view|list|get|snapshot|status)$", re.I)
@@ -59,9 +57,83 @@ def _shlex(s: str) -> list[str]:
 
 
 def _redirect_targets(command: str) -> list[str]:
-    """Return file targets, excluding fd duplication such as ``2>&1``."""
-    return [(m.group(1) or m.group(2)).strip("\"'")
-            for m in _FILE_REDIRECT.finditer(command)]
+    """Return shell file-redirection targets outside quoted regions.
+
+    The scanner recognises ``>``, ``>>``, ``>|``, ``<>``, numbered-fd and
+    ``&>`` forms while excluding fd duplication such as ``2>&1`` and ``>&2``.
+    It deliberately does not descend into a nested ``sh -c`` program; those
+    commands are blocked separately because a string classifier cannot safely
+    reproduce a second shell's parser.
+    """
+    targets: list[str] = []
+    n = len(command)
+    i = 0
+
+    def skip_quote(pos: int, quote: str) -> int:
+        pos += 1
+        while pos < n:
+            if quote == '"' and command[pos] == "\\" and pos + 1 < n:
+                pos += 2
+            elif command[pos] == quote:
+                return pos + 1
+            else:
+                pos += 1
+        return pos
+
+    def read_target(pos: int) -> tuple[str, int]:
+        while pos < n and command[pos].isspace():
+            pos += 1
+        start = pos
+        out: list[str] = []
+        while pos < n:
+            c = command[pos]
+            if c in "'\"":
+                end = skip_quote(pos, c)
+                out.append(command[pos + 1:max(pos + 1, end - 1)])
+                pos = end
+                continue
+            if c == "\\" and pos + 1 < n:
+                out.append(command[pos + 1])
+                pos += 2
+                continue
+            if c.isspace() or c in ";|&":
+                break
+            out.append(c)
+            pos += 1
+        return "".join(out) if pos > start else "", pos
+
+    while i < n:
+        c = command[i]
+        if c in "'\"":
+            i = skip_quote(i, c)
+            continue
+        if c == "\\" and i + 1 < n:
+            i += 2
+            continue
+
+        op_end = -1
+        fd_dup = False
+        if command.startswith("<>", i):
+            op_end = i + 2
+        elif c == ">":
+            if command.startswith(">&", i):
+                op_end = i + 2
+                fd_dup = True
+            elif command.startswith(">>", i) or command.startswith(">|", i):
+                op_end = i + 2
+            else:
+                op_end = i + 1
+
+        if op_end < 0:
+            i += 1
+            continue
+
+        target, end = read_target(op_end)
+        if target and not (fd_dup and (target.isdigit() or target == "-")):
+            targets.append(target)
+        i = max(end, op_end)
+
+    return targets
 
 
 class Inspector:

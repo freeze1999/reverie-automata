@@ -6,6 +6,9 @@ follows Keep a Changelog; versions follow semver.
 ## [Unreleased]
 
 ### Fixed
+- Quoted `>` characters are no longer mistaken for shell file redirects.
+  Redirect scanning is quote-aware, while nested `sh -c`/`bash -c` programs
+  remain fail-closed instead of being guessed at by the outer-shell parser.
 - Protected-path reads with harmless fd plumbing (`2>/dev/null`, `2>&1`,
   `>&2`) no longer become approvals merely because the command contains a
   `>` character. Real file redirects—including numbered fds, `&>`/`>&`,
