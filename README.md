@@ -81,6 +81,11 @@ The agent may only mark a task as done when it has evidence. Evidence can be a t
 - With that hook connected, protected writes, deletion, privileged commands, raw uploads, and unverified messages can be blocked.
 - Each cycle writes a ledger as it works, so a crash still leaves a useful record.
 
+The field report [When the safety layer became the work](docs/field-reports/2026-08-approval-classifier.md)
+documents how a running Reverie Automata instance found, reproduced, and tested
+an approval-classifier false-positive loop, including the complete public
+timeline and aggregate results from 89 approval records.
+
 Start with the demo. Read the output. Point it at a test project before you trust it with anything important.
 
 ## status
