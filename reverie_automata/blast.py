@@ -1,11 +1,11 @@
-"""Blast radius: the after-the-fact ledger of what a cycle actually touched.
+"""Watch-set changes observed while a cycle ran.
 
 Observability, not a cage: the agent is free to act, but the watch set
 (``protected_paths``, the files a cycle is NOT normally expected to touch) is
 mtime-snapshotted before the tasks run and compared after. Files that changed,
-appeared, or VANISHED all surface in the outcome. A deletion is the most
-destructive change an agent can make to a watched file, so it must never be
-the one change this ledger misses; deleted paths carry a ``deleted: `` prefix.
+appeared, or vanished all surface in the outcome. Another process can change a
+file during the same window, so this is evidence of timing, not attribution.
+Deleted paths carry a ``deleted: `` prefix.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def snapshot(watch: list) -> dict[str, float]:
 
 
 def diff(before: dict[str, float], after: dict[str, float]) -> list[str]:
-    """Changed or new files, then deletions flagged with a ``deleted: `` prefix."""
+    """Observed changes, with deletions carrying a ``deleted: `` prefix."""
     changed = sorted(k for k, v in after.items() if before.get(k) != v)
     deleted = sorted(k for k in before if k not in after)
     return changed + [f"deleted: {k}" for k in deleted]

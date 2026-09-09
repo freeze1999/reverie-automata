@@ -6,19 +6,23 @@ follows Keep a Changelog; versions follow semver.
 ## [Unreleased]
 
 ### Fixed
+- Cycle reports now call watch-set diffs `observed_changes`. The old
+  `blast_radius` field remains as a compatibility alias. An mtime diff can show
+  that a file changed during a cycle, but it cannot identify which process made
+  the change.
 - Quoted `>` characters are no longer mistaken for shell file redirects.
   Redirect scanning is quote-aware, while nested `sh -c`/`bash -c` programs
   remain fail-closed instead of being guessed at by the outer-shell parser.
 - Protected-path reads with harmless fd plumbing (`2>/dev/null`, `2>&1`,
   `>&2`) no longer become approvals merely because the command contains a
-  `>` character. Real file redirects—including numbered fds, `&>`/`>&`,
+  `>` character. Real file redirects, including numbered fds, `&>`/`>&`,
   appends, noclobber/read-write forms, relative targets, and unresolved
-  shell-expanded targets—remain fail-closed.
+  shell-expanded targets, remain fail-closed.
 - Fire-lock claim is atomic (`O_CREAT|O_EXCL`); an exists()-then-write race
   could let two concurrent ticks both fire.
 
 ### Added
-- Blast radius is now actually computed: `protected_paths` are snapshotted
+- Watch-set changes are now computed: `protected_paths` are snapshotted
   around each cycle and changed, new, and deleted files land in the outcome
   (deletions flagged with a `deleted: ` prefix).
 - Adapter and harvest tests for the pure parts (argv construction, output

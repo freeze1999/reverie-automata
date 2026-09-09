@@ -1,3 +1,4 @@
+import json
 import sys, tempfile, time
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +49,10 @@ def test_full_cycle_mock():
                      build_agent({"backend": "mock"}), build_transport({"transport": "stdout"}))
         out = eng.run_cycle(now=datetime(2026, 7, 7, 13, 0))
         assert out.grade in ("A", "B", "C", "D", "F", "N")
+        assert out.observed_changes == out.blast_radius
+        cycle = sorted((Path(td) / "cycles").glob("*/outcome.json"))[-1]
+        payload = json.loads(cycle.read_text())
+        assert payload["observed_changes"] == payload["blast_radius"]
         con = store.connect()
         assert con.execute("SELECT COUNT(*) FROM journal").fetchone()[0] == 1
         con.close()

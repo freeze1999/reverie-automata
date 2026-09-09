@@ -59,7 +59,7 @@ class Lesson:
 
 @dataclass
 class Outcome:
-    """The full result of one cycle — everything needed to audit it later."""
+    """The full result of one cycle, with everything needed to audit it later."""
 
     when: datetime
     action_class: ActionClass
@@ -71,3 +71,8 @@ class Outcome:
     lessons: list[Lesson] = field(default_factory=list)
     blast_radius: list[str] = field(default_factory=list)
     journal: str = ""
+
+    @property
+    def observed_changes(self) -> list[str]:
+        """Files that changed during the cycle, without claiming attribution."""
+        return self.blast_radius

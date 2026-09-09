@@ -532,6 +532,7 @@ class Engine:
         (cdir / "outcome.json").write_text(json.dumps({
             "ts": ts, "grade": graded.grade, "plan": phase.plan, "ledger": ledger,
             "brain": self._brain(),
+            "observed_changes": graded.touched,
             "blast_radius": graded.touched,
             "inbox_consumed": execution.inbox_consumed,
             "plan_complaints": phase.complaints, "false_no_op": phase.false_no_op,
@@ -540,6 +541,7 @@ class Engine:
         events.emit(self.home, "cycle", cycle=ts, grade=graded.grade,
                     moved=graded.moved,
                     statuses=[e["status"] for e in ledger],
+                    observed_changes=len(graded.touched),
                     blast=len(graded.touched),
                     inbox_consumed=execution.inbox_consumed,
                     lessons=[f"{l.situation} -> {l.action} -> {l.outcome}" for l in lessons],
