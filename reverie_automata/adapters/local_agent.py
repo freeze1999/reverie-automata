@@ -37,14 +37,10 @@ from .local_server import LocalServer
 def _live(kind: str, **fields) -> None:
     """Emit one line about a step WHILE it happens.
 
-    The transcript is assembled and returned when the session ends, which is
-    right for the record and useless for watching: a cycle on a small local
-    brain takes minutes, and for those minutes an observer sees nothing at all
-    and cannot tell thinking from hung. So each step is appended as it occurs,
-    to a file named by the environment the engine already stamps.
-
-    Failure here is silence, never an exception. Watching the work must never
-    be able to break the work.
+    The transcript only arrives when the session ends, and a cycle on a small
+    local brain takes minutes, so each step is appended live to a file named by the
+    engine's environment. Failure here is silence, never an exception: watching
+    the work must never break it.
     """
     try:
         home, cycle = os.environ.get("REVERIE_HOME"), os.environ.get("REVERIE_CYCLE")
@@ -103,12 +99,9 @@ class LocalAgent:
         # small a budget truncates the json mid-string, which parses as no
         # step at all and looks exactly like a model that refused to answer.
         self.step_tokens = int(o.get("step_tokens", 1600))
-        # Everything the server needs travels with it. The credential and the
-        # constraint mode were missing here while the planner had both, so the
-        # plan phase reached a hosted brain and the execute phase got 401 from
-        # the same endpoint in the same cycle. A loop that builds its own
-        # dependency has to be handed the whole configuration, not the part
-        # somebody remembered.
+        # Everything the server needs travels with it. The credential and the constraint
+        # mode were once missing here, so in one cycle the plan phase reached the hosted
+        # brain and the execute phase got 401 from the same endpoint.
         self.server = LocalServer({
             "base_url": o.get("base_url", "http://127.0.0.1:8080"),
             "model": o.get("model", "local"),
@@ -190,20 +183,11 @@ class LocalAgent:
             signature = (tool, arg)
             repeats[signature] = repeats.get(signature, 0) + 1
 
-            # Watching a wall being hit is not supervision. Measured: given
-            # `rank_A_squared = A**2.rank()`, the interpreter answered with the
-            # file, the line, a caret under the exact character and the words
-            # "invalid decimal literal", and the model submitted the identical
-            # code twice more. It does not update on evidence, not across
-            # cycles, not within a session, not when the evidence is a compiler
-            # pointing at the character.
-            #
-            # So on the SECOND identical call the loop stops asking politely
-            # and changes something itself. The perturbation must happen BEFORE
-            # the transcript append, because the transcript is what the next
-            # prompt is built from; an instruction written after it is an
-            # instruction the model never sees, which is the same mistake as
-            # detecting a livelock and doing nothing about it.
+            # Watching a wall being hit is not supervision. Given a compiler error with a
+            # caret under the exact character, the model resubmitted the identical code twice.
+            # So on the SECOND identical call the loop changes something itself, BEFORE the
+            # transcript append: the transcript builds the next prompt, and an instruction
+            # written after it is never seen.
             if repeats[signature] == 2:
                 result = (
                     f"[harness] you have now made this exact call twice: "
@@ -218,20 +202,13 @@ class LocalAgent:
             self.transcript.append(
                 f"[{turn + 1}] {tool}({arg[:120]}) -> {result[:self.max_result_chars]}")
 
-            # A small model does not readily abandon an approach that is not
-            # working: it reissues the identical call until the cap. The guard
-            # is on REPETITION, not on failure, because a search that keeps
-            # returning "no results" is a successful call and the same dead
-            # end, and an identical call with an identical argument cannot
-            # produce new information whatever it returns.
+            # A small model reissues a failing call until the cap. The guard is on
+            # REPETITION, not failure: an identical call with an identical argument cannot
+            # produce new information, whatever it returns.
             if repeats[signature] >= 3:
-                # A false NEGATIVE lives here and it was measured: a tool that
-                # is idempotent answers "already recorded" to the second and
-                # third call, which means the work SUCCEEDED on the first and
-                # the session is about to be scored as a failure. The harness
-                # was killing finished work because the executor did not know
-                # to stop, so the perturbation above now names calling done as
-                # an option, and this verdict says what actually happened.
+                # A measured false NEGATIVE: an idempotent tool answers "already recorded" to
+                # the second and third call, meaning the first SUCCEEDED. So the perturbation
+                # names calling done as an option, and this verdict says what happened.
                 outcome = "failed"
                 evidence = (f"the same call was made {repeats[signature]} times "
                             f"with the same argument ({tool}), which cannot "

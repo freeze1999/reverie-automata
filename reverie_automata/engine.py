@@ -48,14 +48,9 @@ def _transport_failed(raw: str) -> bool:
 def _grab(tag, text):
     """One tagged block, ending at <<END>>, the next tag, or the end of text.
 
-    A closing tag the model forgot is not a block the model did not write. The
-    first LEARN output this engine ever collected opened four blocks and closed
-    one, at the very bottom, and the strict form read that as a single enormous
-    journal and zero lessons. The content was correct and specific and all of it
-    was thrown away on punctuation.
-
-    The rule everywhere else in this project applies to parsing too: the harness
-    absorbs the executor's formatting instead of depending on it.
+    A missing closing tag is not a missing block. The first LEARN output opened
+    four blocks and closed one, and the strict parser kept one huge journal and
+    zero lessons. The harness absorbs the executor's formatting.
     """
     m = re.search(r"<<%s>>(.*?)(?:<<END>>|(?=<<[A-Z_]+>>)|\Z)" % tag, text, re.S)
     return m.group(1).strip() if m else ""
@@ -78,11 +73,8 @@ _LABELLED = re.compile(
 
 
 # The prompt's own placeholder words. A model with nothing to report copies the
-# example back rather than omitting the block, and `situation -> action ->
-# observed outcome` parses perfectly: three fields, all non-empty, structurally
-# indistinguishable from a real lesson. It was recorded as one on the first
-# cycle after the parser was relaxed. An echo of the question is not an answer,
-# and a false lesson is worse than no lesson because it reads as a finding.
+# example back, and it parses as a valid lesson: one was recorded on the first
+# cycle after the parser was relaxed. A false lesson is worse than none.
 _ECHO = {"situation", "action", "outcome", "observed", "observed outcome",
          "the outcome you actually observed", "none", "n/a", "na", "nothing",
          "up to three", "omit if none", "up to three; omit if none", "..."}
@@ -138,13 +130,10 @@ RISKY_HINTS = re.compile(
     r"\bsudo\b|\bsystemctl\b|\bcrontab\b|\bdeploy\w*|\bpush\b|\binstall\w*|"
     r"\bdelete\w*|\bdrop\s+table\b|\brestart\w*|\bmigrat\w*|\bpassword\w*|"
     r"\bsecret\w*|\bproduction\b", re.I)
-# `prod` was here beside `production` and had to go: a word boundary sits either
-# side of a dot, so it matched `np.prod`, `math.prod` and `sympy.prod`, and
-# parked a legitimate exact-arithmetic task for approval. This is the third
-# time a token short enough to appear inside ordinary code has been used as a
-# discriminator here, after re-prod-uce and after `program` in the routing
-# rules. The lesson keeps arriving in the same envelope: a pattern that fires
-# on a substring of normal work is not cautious, it is broken.
+# `prod` was removed: word boundaries sit either side of a dot, so it matched
+# `np.prod` and parked an exact-arithmetic task. It was the third short token to
+# misfire here, after re-prod-uce and `program`. A pattern that fires on ordinary
+# code is broken, not cautious.
 
 
 @dataclass
@@ -258,13 +247,9 @@ class Engine:
     def _typed_from_due_thread(self, con) -> dict | None:
         """A due thread whose body IS a typed task, handed over unchanged.
 
-        The supply path. Measured twice: the executor picks a plausible task
-        TYPE and leaves its required fields empty, because filling them means
-        transcribing specific values, which is the one thing this class of
-        model cannot do. Refusing the incomplete task is correct and produces
-        nothing; the harness has to supply what the executor cannot author.
-        That is the same rule as perturbing a repeated call, applied one level
-        up: nothing is left to the executor noticing.
+        Measured twice: the executor picks a plausible TYPE and leaves the required
+        fields empty, because it cannot transcribe specific values. The harness
+        supplies what the executor cannot author.
         """
         if self.menu is None:
             return None
@@ -302,16 +287,10 @@ class Engine:
         demonstrably due, and the thread's own title is the most honest
         statement of that something available without asking anyone.
         """
-        # Under a typed menu this path must produce a typed task or nothing.
-        # It used to build one out of a thread TITLE, with no type, and an
-        # untyped task has no postcondition, so it passed unexamined. Measured
-        # over 57 unattended cycles: twenty one tasks filed this way, three of
-        # them graded done, all three false. One computed the sum of a hundred
-        # rationals in answer to a thread titled "dead end: write_artifact".
-        #
-        # The gates applied to what the planner PROPOSED and not to what the
-        # wrapper FORCED, which is the same blind spot as every other entry
-        # where the operator turned out to be inside the threat model.
+        # Under a typed menu this path yields a typed task or nothing. It used to build
+        # an untyped task from a thread TITLE, with no postcondition: over 57 unattended
+        # cycles it filed 21, and all three graded done were false. Gates must cover what
+        # the wrapper forces, not only what the planner proposes.
         if self.menu is not None:
             return None
 
@@ -332,12 +311,8 @@ class Engine:
     def _wrapper_risk(self, task: dict) -> tuple[str, str]:
         """Scan what the task INTENDS, never what it carries.
 
-        A typed task can hold source code in a field, and a risk pattern
-        written for a 240-character prose description then runs over a program.
-        Every code-shaped token becomes a false positive: `prod`, `install`,
-        `push` and `delete` all appear in ordinary source. So payload fields
-        are excluded, and the classifier reads the fields that say what the
-        task is for.
+        Payload fields can hold source code, where `prod`, `install`, `push` and
+        `delete` are ordinary tokens, so they are excluded from the scan.
         """
         payload = ()
         if self.menu is not None:
@@ -566,17 +541,10 @@ class Engine:
     def _brain(self) -> dict:
         """The executor's own identity, stamped into every cycle record.
 
-        Every gate in this engine grades what the machine DID. None of them
-        record what the machine WAS, so two runs of the same instance were
-        never comparable and nobody could tell. It cost eight days: a unit at
-        boot replaced the model and cut the window to a quarter, the cycles
-        after it were read against the reports of the cycles before it, and the
-        swap was only found by reading a systemd file weeks later.
-
-        A changed brain is announced loudly and does not stop the cycle. A
-        harness that refuses to run is a harness that stops recording, and the
-        record is the thing being protected. Introspection is best effort:
-        a backend that cannot say who it is says nothing, and never raises.
+        Without it runs were not comparable: a boot unit once swapped the model and
+        cut the window to a quarter, and it took eight days to find. A changed brain
+        is announced and the cycle continues, because a harness that stops also stops
+        recording. Best effort; never raises.
         """
         for src in (self.agent, self.planner):
             probe = getattr(src, "server_identity", None)
@@ -607,12 +575,9 @@ class Engine:
     def _note_task(self, con, ts, tid, what, status, why) -> None:
         """Put a task that never ran into the ledger anyway, with its reason.
 
-        Parked and skipped tasks used to return before the ledger row was
-        written, so from the record's point of view they had not happened at
-        all. Nothing downstream could report them and nothing could carry them
-        into the next cycle. A refusal that leaves no trace is the same shape
-        as the work simply not existing, and the machine cannot tell those
-        apart any more than we could.
+        Parked and skipped tasks used to leave no row, so nothing could report them or
+        carry them forward. A refusal with no trace looks the same as work that never
+        existed.
         """
         try:
             con.execute("INSERT INTO tasks (cycle_ts, task_id, what, mode, risk, "
@@ -634,17 +599,10 @@ class Engine:
         what = (self.menu.render(task) if self.menu and self.menu.get(task)
                 else task.get("what", ""))
         wrapper_risk, pattern = self._wrapper_risk(task)
-        # Who is allowed to call this risky. For TYPED work: the menu, which
-        # decided once for the whole kind, and the wrapper, which reads the
-        # task's stated intent. Not the planner. It filled that field with
-        # RISKY 218 times running for a read-only lookup, and a self-declared
-        # RISKY parks the task, so the machine spent a night filing approvals
-        # against itself into a queue nobody opens, completed nothing, and
-        # blamed something else in every review because nothing told it why.
-        #
-        # Untyped work keeps the old rule: with no menu entry, the planner's
-        # word is the only signal there is, and an unclassified task should
-        # stop rather than run.
+        # Who may call this risky. Typed work: the menu and the wrapper, never the
+        # planner, which once marked a read-only lookup RISKY 218 times running and spent
+        # a night filing approvals against itself. Untyped work keeps the old rule: the
+        # planner's label is the only signal, so an unclassified task stops.
         declared = str(task.get("risk", "SAFE")).upper()
         t = self.menu.get(task) if self.menu is not None else None
         if t is not None:
@@ -861,15 +819,9 @@ class Engine:
     def _append_memory(self, lessons):
         """Append what is new, where new means more than not byte-identical.
 
-        The exact-match guard here was the whole defence, and a model that
-        restates one observation three ways defeats it without trying. Measured
-        over one night: 522 recorded lessons, three a cycle, every one of them
-        the same sentence about the same blocked citation with the clauses
-        reordered. Nothing was learned twice; it was written down 522 times.
-
-        So the comparison is on the shape of the situation rather than its
-        wording. Cheap, and it does not need to be clever: an exact restatement
-        with a synonym swapped is still worth one line, not three.
+        One night produced 522 lessons, all the same sentence with its clauses
+        reordered, and the exact-match guard passed every one. So the comparison is
+        on the shape of the situation, not its wording.
         """
         if not lessons:
             return

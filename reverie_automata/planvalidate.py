@@ -33,12 +33,10 @@ _EMPTY_INTENTS = {
 
 MIN_WHAT_CHARS = 15
 
-# Work that plainly touches the world cannot be done from memory. A planner
-# that labels "read the file" as a text task is not lying, it has simply
-# mis-sorted itself, and the engine will then hand it a prompt with no tools
-# and get an honest "I cannot reach that" back. Upgrading is the safe
-# direction: a task given tools it did not need loses nothing, while a task
-# denied tools it needed is stranded.
+# Work that touches the world cannot be done from memory. A planner that files
+# "read the file" as a text task has mis-sorted it, and gets back "I cannot
+# reach that". Upgrading is safe: unneeded tools cost nothing, missing ones
+# strand the task.
 _NEEDS_TOOLS = re.compile(
     r"\b(read|open|list|search|fetch|download|look\s?up|browse|query|"
     r"run|execute|compute|calculate|verify|check|test|"
@@ -111,12 +109,9 @@ def validate_plan(plan: dict, *, work_available: bool, max_tasks: int = 1,
                 complaints.append(f"task {t.get('id', '?')!r} had no content in `what`; dropped")
                 continue
             if str(t.get("mode", "")).lower() == "text" and not allow_text_tasks:
-                # Observed live on a small brain: asked to work without tools,
-                # it produced a fluent and entirely invented account of the
-                # subject, opening with "I have reviewed the text". Nothing
-                # grounds a text task, so for such a brain there is no text
-                # task; everything goes through tools, where each claim traces
-                # to something a tool actually returned.
+                # Observed on a small brain: without tools it wrote a fluent, invented account
+                # that opened with "I have reviewed the text". For such a brain there is no text
+                # task; everything goes through tools, so each claim traces to a real result.
                 complaints.append(
                     f"task {t.get('id', '?')!r} filed as text, but this profile "
                     "grounds every claim in a tool result; upgraded")

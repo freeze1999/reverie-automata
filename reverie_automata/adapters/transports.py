@@ -1,4 +1,4 @@
-"""Approval transports — how a risky action reaches a human and their answer returns.
+"""Approval transports: how a risky action reaches a human and their answer returns.
 
 The default is ``stdout`` (print the card, read a decision from a file/queue) which
 needs nothing and is perfect for local runs and CI. ``telegram`` is a worked example

@@ -30,15 +30,10 @@ LOCAL = "local"
 DELEGATE = "delegate"
 
 # Authoring work: producing an artifact that has to match a specification.
-# Deliberately multilingual, because the first version of the sibling rule in
-# planvalidate matched English verbs only and a task written in Chinese walked
-# straight past it.
-# Verbs and their objects, not ambient nouns. "program" was here and it was a
-# mistake that cost two nonsense jobs to a person: in this deployment the word
-# names the research programme and appears in every file path, so every task
-# hit the authoring half, and any task whose rationale happened to contain
-# "provided" was then routed out. A word that appears in most tasks cannot
-# discriminate between them, whatever it means elsewhere.
+# Multilingual, because an English-only sibling rule let a Chinese task through.
+# Verbs and objects, not ambient nouns: "program" names the research programme in
+# every path here, so it matched every task and cost a person two nonsense jobs.
+# A word that appears in most tasks cannot tell them apart.
 AUTHOR = (r"\bwrite\b|\bimplement\b|\brewrite\b|\bport\b|"
           r"\brefactor\b|\bscript\b|\bpatch\b|"
           r"\bwrite\s+code\b|\bfix\s+the\b|"
@@ -47,12 +42,9 @@ AUTHOR = (r"\bwrite\b|\bimplement\b|\brewrite\b|\bport\b|"
 # Faithfulness: the artifact must agree with something already given.
 FIDELITY = (r"\bgiven\b|\bsupplied\b|\bprovided\b|\babove\b|\bpublished\b|"
             r"\bexactly\b|\bverbatim\b|"
-            # A specific named object. The first version wanted the literal
-            # words "the matrix", and a task saying "the 4x4 Druzkowski matrix
-            # over Z[i]" walked straight past it, ran locally, and the brain
-            # invented a matrix, computed it correctly, and was graded A for a
-            # receipt that proved a computation had happened and nothing about
-            # what it was a computation of.
+            # A specific named object. The first version wanted the literal words "the
+            # matrix", so "the 4x4 Druzkowski matrix over Z[i]" ran locally, the brain
+            # invented a matrix, and the receipt was graded A for computing something else.
             r"\bthe [\w\-]{0,12}\s?[\w\-]{0,12}\s?matrix\b|"
             r"\bexample\s+\d|\barxiv[:\s]|\b\d{4}\.\d{4,5}\b|"
             r"\bfrom the (paper|drop|citation|source|inbox|log|record)\b|"

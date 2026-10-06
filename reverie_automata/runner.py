@@ -1,7 +1,7 @@
-"""Runner — the cron entrypoint that glues the gate to the engine.
+"""Runner: the cron entrypoint that glues the gate to the engine.
 
-You wire two callbacks — "when did the principal last act?" and "is the principal
-available?" — and schedule ``Runner.tick()`` on a timer (cron every ~10 min). The
+You wire two callbacks ("when did the principal last act?" and "is the principal
+available?") and schedule ``Runner.tick()`` on a timer (cron every ~10 min). The
 gate decides; the engine only runs when it should. A PID-stamped lock prevents
 overlap and self-heals if an owner dies.
 """

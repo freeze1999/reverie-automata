@@ -1,4 +1,4 @@
-"""Agent backends — point the flywheel at whatever coding agent you already run.
+"""Agent backends: point the flywheel at whatever coding agent you already run.
 
 Every modern coding agent exposes a non-interactive "run this prompt, print the
 result" mode. That is *exactly* the shape reverie-automata needs for a phase-2/3
@@ -7,7 +7,7 @@ reasoning is the agent's; reverie-automata owns the loop, the gate, the memory,
 and the safety rail around it.
 
 Implemented against the documented non-interactive invocation of each tool. CLIs
-move fast — every adapter reads its binary/flags from config ``options`` so you
+move fast: every adapter reads its binary/flags from config ``options`` so you
 can pin the exact command without editing code:
 
     agent:
@@ -15,7 +15,7 @@ can pin the exact command without editing code:
       options: { bin: claude, model: sonnet, extra_args: ["--permission-mode", "acceptEdits"] }
 
 ``complete()`` (cheap, no tools) falls back to the same CLI in a single-shot mode
-unless you set a separate ``planner:`` backend (e.g. a raw LLM endpoint) — which is
+unless you set a separate ``planner:`` backend (e.g. a raw LLM endpoint), which is
 usually cheaper for phase 1.
 """
 from __future__ import annotations
@@ -161,7 +161,7 @@ class Pi(_CliAgent):
 class Mock:
     """Deterministic, phase-aware offline backend so the demo and tests need no keys
     or network. It recognises which phase it's in from the envelope the prompt asks
-    for and answers in kind — so the demo produces a clean, realistic cycle."""
+    for and answers in kind, so the demo produces a clean, realistic cycle."""
 
     name = "mock"
 

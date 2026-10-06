@@ -3,14 +3,14 @@
 reverie-automata is deliberately not tied to a model, an agent runtime, a chat
 app, or a data source. The core reasons; these interfaces let it *act*.
 
-* ``AgentBackend``  — runs a phase as a real tool-using session (phase 2/3), or a
-                      cheap text completion (phase 1 / text-only). This is where
-                      Claude Code, Codex, Cursor, Devin, Windsurf, Cline, Pi, or a
-                      raw OpenAI-compatible endpoint plug in.
-* ``ApprovalTransport`` — carries a risky action out to a human and brings back
-                      approve/deny (Telegram, Slack, email, a CLI prompt, a webhook).
-* ``Source``        — contributes one block of harvested context each cycle
-                      (a file, a shell probe, a log query, an inbox, an API).
+* ``AgentBackend``: runs a phase as a real tool-using session (phase 2/3), or a
+  cheap text completion (phase 1 / text-only). This is where
+  Claude Code, Codex, Cursor, Devin, Windsurf, Cline, Pi, or a
+  raw OpenAI-compatible endpoint plug in.
+* ``ApprovalTransport``: carries a risky action out to a human and brings back
+  approve/deny (Telegram, Slack, email, a CLI prompt, a webhook).
+* ``Source``: contributes one block of harvested context each cycle
+  (a file, a shell probe, a log query, an inbox, an API).
 
 Keep them tiny. A new integration is a subclass, never a fork.
 """
@@ -60,7 +60,7 @@ class ApprovalEvent:
 
 @runtime_checkable
 class Source(Protocol):
-    """Contributes one labelled block of context. Must never raise — degrade to a
+    """Contributes one labelled block of context. Must never raise; degrade to a
     short '?' so a broken source can't crash a cycle."""
 
     label: str

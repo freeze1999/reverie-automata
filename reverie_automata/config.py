@@ -1,4 +1,4 @@
-"""Configuration — one YAML, every knob.
+"""Configuration: one YAML, every knob.
 
 The whole point of reverie-automata is that behaviour is *configured*, not
 forked. ``Config.load`` reads a YAML file, overlays it on the defaults, and hands

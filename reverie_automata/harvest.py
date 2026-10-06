@@ -1,4 +1,4 @@
-"""Harvest — assemble the working context the agent reasons over each cycle.
+"""Harvest: assemble the working context the agent reasons over each cycle.
 
 The continuity spine (lessons + open threads) is always present; configured sources
 add the rest. The whole thing is held under a hard token budget by trimming the
@@ -36,14 +36,10 @@ class Harvester:
         """(priority, label, text). Priority 0 = never trimmed."""
         lessons = con.execute("SELECT situation, action, outcome FROM lessons ORDER BY id DESC LIMIT 5").fetchall()
         threads = self.store.open_threads(con, limit=40)
-        # Bounded, and it has to be. Priority 0 means the trimmer will not
-        # touch this block, so an append-only file at priority 0 is a context
-        # overflow with a fuse on it. It burned down: the lesson channel was
-        # repaired, immediately produced three near-identical lessons a cycle,
-        # and inside a night MEMORY.md reached 64,758 characters, roughly
-        # sixteen thousand tokens, on a sixteen-thousand-token window. Every
-        # planning call then returned HTTP 400 and every cycle was graded as an
-        # idle one. A block that cannot be trimmed must be one that cannot grow.
+        # Bounded, because priority 0 means the trimmer never touches it. Unbounded, a
+        # repaired lesson channel grew MEMORY.md to 64,758 characters in one night on a
+        # sixteen-thousand-token window, and every planning call returned HTTP 400. A
+        # block that cannot be trimmed must not be able to grow.
         try:
             memory = self.memory_path.read_text(encoding="utf-8")
         except Exception:
@@ -58,13 +54,9 @@ class Harvester:
             (0, "memory (lessons)", memory),
             (0, "recent lessons", "\n".join(f"- {s} -> {a} -> {o}" for s, a, o in lessons) or "(none)"),
             (0, "open threads (the work queue)", "\n".join(f"#{i} [{k}] {t}" for i, k, t in threads) or "(empty)"),
-            # What became of the last few tasks, including the ones that never
-            # ran. This block is the difference between a machine that knows
-            # its work was refused and one that only knows nothing happened.
-            # Over one night the second kind proposed identical work 218 times,
-            # had every attempt parked before it started, and wrote a confident
-            # and wrong diagnosis every cycle, because the true reason was
-            # never anywhere it could see.
+            # What became of the last few tasks, including ones that never ran. Without it,
+            # one night the machine proposed the same parked work 218 times and wrote a wrong
+            # diagnosis each cycle, because the refusal was nowhere it could see.
             (1, "what became of your last tasks", self._recent_outcomes(con)),
         ]
 
@@ -91,12 +83,9 @@ class Harvester:
         # declined by judgment, never silently shrunk by the trimmer.
         if ctx.get("inbox"):
             blocks.insert(1, (0, "inbox (one-shot drops for THIS cycle)", ctx["inbox"]))
-        # A standing order is present EVERY cycle, in full. As a thread title
-        # in a list it is a line the planner skims past: watched live, a cycle
-        # with a standing order open still claimed it had "no active work
-        # queue". The objective has to be in the context as text, not as a
-        # reference to text, for the same reason "a note exists" made an agent
-        # ask permission where the note's contents made it act.
+        # A standing order is present EVERY cycle, in full. As a thread title it was
+        # skimmed: a cycle with one open still claimed "no active work queue". The
+        # objective has to be in context as text, not as a reference to text.
         if ctx.get("mandates"):
             blocks.insert(1, (0, "standing orders (in force every cycle)", ctx["mandates"]))
         for s in self.sources:

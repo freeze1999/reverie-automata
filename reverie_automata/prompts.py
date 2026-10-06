@@ -1,4 +1,4 @@
-"""The three reasoning-phase prompts — the heart of the "reasoning-first" idea.
+"""The three reasoning-phase prompts: the heart of the "reasoning-first" idea.
 
 Behaviour is not selected from a table of scripted idle activities; it *emerges*
 from the agent reasoning, in sequence, through three questions:
@@ -8,7 +8,7 @@ from the agent reasoning, in sequence, through three questions:
     3. LEARN   - what happened, what did I learn, what carries to next time?
 
 These are DEFAULTS. They are intentionally generic and voice-neutral so the repo
-ships clean. Override any of them in config or by passing your own — the engine
+ships clean. Override any of them in config or by passing your own; the engine
 only requires the ``{...}`` field names to match. Give your agent a persona and
 these become *its* inner voice.
 """

@@ -1,4 +1,4 @@
-"""Durable state — the agent's continuity organ.
+"""Durable state: the agent's continuity organ.
 
 One sqlite database holds cycles, the live task ledger, the single work queue
 (``threads``), the artifact-bound approval log, falsifiable lessons, and raw

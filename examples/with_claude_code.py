@@ -2,7 +2,7 @@
 name for codex / cursor / devin / windsurf / cline / pi).
 
 Prereqs: the agent's CLI installed and authenticated. This runs ONE supervised
-cycle in the foreground so you can watch it — exactly how you'd validate before
+cycle in the foreground so you can watch it, exactly how you'd validate before
 putting ``Runner.tick()`` on a cron.
 
     python examples/with_claude_code.py ~/my-project

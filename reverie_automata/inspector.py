@@ -1,4 +1,4 @@
-"""The tool-layer brake — a capability firewall that runs on the *action*, not the plan.
+"""The tool-layer brake: a capability firewall that runs on the *action*, not the plan.
 
 Plan-level risk labels are UX; they can be talked around. The real guard classifies
 each concrete tool call at the moment it is made: a write to a protected path, a

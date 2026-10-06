@@ -1,11 +1,11 @@
-"""Context sources — what the agent gets to see each cycle.
+"""Context sources: what the agent gets to see each cycle.
 
 A source contributes one labelled block. The harvester concatenates them under a
 token budget, trimming lowest-priority blocks first. Sources must never raise;
 they degrade to "?" so a broken probe can't take down a cycle.
 
 Built-in sources cover the common cases; writing your own is a ~10-line class.
-Configure them in ``sources:`` — each entry is ``{type, label, priority, ...}``.
+Configure them in ``sources:``; each entry is ``{type, label, priority, ...}``.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Any
 
 
 class FileSource:
-    """Injects the contents (or tail) of files/globs — memory, notes, a TODO inbox."""
+    """Injects the contents (or tail) of files/globs: memory, notes, a TODO inbox."""
 
     def __init__(self, label, priority=4, patterns=None, max_chars=4000, **_):
         self.label, self.priority = label, priority
@@ -36,7 +36,7 @@ class FileSource:
 
 
 class ShellSource:
-    """Runs read-only probes and injects their output — service health, git status,
+    """Runs read-only probes and injects their output: service health, git status,
     disk, a queue depth. Commands are yours; keep them side-effect free."""
 
     def __init__(self, label, priority=4, commands=None, timeout=15, **_):
@@ -58,7 +58,7 @@ class ShellSource:
 class MarkerScanSource:
     """Indexes files under roots that were recently modified or carry work markers
     (#todo, TODO, WIP, FIXME, #idea). Great for pointing the agent at a vault/repo
-    without dumping it — it opens what it needs in-session."""
+    without dumping it; it opens what it needs in-session."""
 
     MARKERS = ("#todo", "TODO", "WIP", "FIXME", "#idea", "#bug")
 

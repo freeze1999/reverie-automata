@@ -73,23 +73,14 @@ class LocalServer:
         self.timeout_s = int(o.get("timeout_s", 600))
         # {"name": ..., "schema": {...}} to force valid structure
         # A bearer token, so the same adapter reaches a hosted OpenAI-compatible
-        # endpoint as well as a local one. This exists to make an A/B possible:
-        # holding the harness, the prompts, the tools and the queue fixed while
-        # swapping only the brain is the only way to tell "the model is too
-        # small" apart from "the work was badly specified", and those two
-        # diagnoses lead to completely different projects.
+        # endpoint. That makes the A/B possible: swap only the brain to tell "the model
+        # is too small" apart from "the work was badly specified".
         self.api_key = str(o.get("api_key") or "").strip()
-        # How to constrain the shape. `json_schema` is the strong form: the
-        # server compiles a grammar and malformed output becomes impossible
-        # rather than unlikely. Not every endpoint has it, and DeepSeek's
-        # official API answers "this response_format type is unavailable now",
-        # so `json_object` is the weaker fallback: valid json is guaranteed,
-        # the KEYS are not, and the required shape has to be stated in the
-        # prompt like an ordinary instruction.
-        #
-        # Worth being blunt about what that costs an experiment: two arms
-        # constrained by different mechanisms are not perfectly comparable.
-        # It is unavoidable here, so it is stated rather than smoothed over.
+        # How to constrain the shape. `json_schema` compiles a grammar, so malformed
+        # output becomes impossible. DeepSeek's official API rejects it, so `json_object`
+        # is the fallback: valid json, but the KEYS are not guaranteed and the shape goes
+        # in the prompt. Two arms constrained differently are not perfectly comparable;
+        # that is stated here rather than smoothed over.
         self.schema_mode = str(o.get("schema_mode", "json_schema"))
         self.schema = o.get("schema")
         # A grammar describes ONE expected shape, so it must not be applied to
@@ -118,13 +109,9 @@ class LocalServer:
     def server_identity(self) -> dict[str, Any]:
         """Which brain is actually answering, for the cycle record.
 
-        A harness that records what the machine DID and never what the machine
-        WAS cannot compare two of its own runs. Measured the hard way: a unit
-        nobody had read swapped the model and quartered the window at a reboot,
-        eight days of cycles were graded against the new brain as though it were
-        the old one, and the swap was reconstructed afterwards from a systemd
-        file and a GPU size rather than from the record. The independent
-        variable belongs in the log with everything else.
+        A reboot once swapped the model and quartered the window, and eight days of
+        cycles were graded as if the old brain were still running. The independent
+        variable belongs in the log.
         """
         d = self._props()
         if d:

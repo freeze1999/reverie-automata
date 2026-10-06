@@ -1,4 +1,4 @@
-"""The gate — a model-free decision made before any money is spent.
+"""The gate: a model-free decision made before any money is spent.
 
 An always-on agent that thinks on every tick is expensive and annoying. So the
 decision of *whether* to stir is a pure function with no model call: a working

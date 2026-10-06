@@ -10,6 +10,11 @@ follows Keep a Changelog; versions follow semver.
   just above the worst function today (`_redirect_targets`, 20). The number
   only moves down; a function that crosses it gets split.
 
+### Changed
+- Long comments in the engine, the local adapters, task types, routing,
+  harvest and plan validation are shorter. Each keeps the rule, the incident
+  behind it and its number; no code changed.
+
 ### Fixed
 - Cycle reports now call watch-set diffs `observed_changes`. The old
   `blast_radius` field remains as a compatibility alias. An mtime diff can show

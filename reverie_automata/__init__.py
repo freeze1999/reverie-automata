@@ -1,4 +1,4 @@
-"""reverie-automata — a reasoning-first idle flywheel for any coding agent.
+"""reverie-automata: a reasoning-first idle flywheel for any coding agent.
 
     from reverie_automata import Config, Runner
     cfg = Config.load("reverie.yaml")

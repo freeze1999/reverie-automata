@@ -61,37 +61,24 @@ class TaskType:
     # written for a prose description reads a program as a threat and parks
     # legitimate work. Intent is what a guard should judge.
     payload: tuple[str, ...] = ()
-    # The tools that can actually satisfy this type's postcondition. Declared
-    # rather than inferred, because a menu entry with no route to its own
-    # postcondition is a trap: the work is admissible, the executor tries, and
-    # nothing it can do will ever pass. Found live, twice in one run, on a
-    # `record_deadend` type whose check wanted a structured row that no tool
-    # could write. That is A4's unfinishable task wearing a type, and the fix
-    # is the same shape as `counts_distinct`: make somebody write the sentence.
+    # The tools that can satisfy this type's postcondition, declared rather than
+    # inferred. A type with no route to its own postcondition is a trap: found twice
+    # in one run on `record_deadend`, whose check wanted a row no tool could write.
     satisfied_by: tuple[str, ...] = ()
     # What this KIND of work risks, decided once by whoever wrote the menu.
     #
-    # It used to be a required field on the task, filled in by the planner, and
-    # the planner is not competent to answer it. Measured over one night: a
-    # read-only identifier lookup was labelled RISKY 218 consecutive times, and
-    # since a self-declared RISKY is enough to park a task, the machine spent
-    # the night filing approvals against itself into a queue nobody opens. It
-    # completed nothing, and its own reviews blamed a dead-end citation,
-    # because the real reason was never shown to it.
-    #
-    # Risk is a property of the shape of the work. A type that reads a paper's
-    # metadata is safe every time it runs, whatever the model thinks that day.
+    # The planner used to fill it in and is not competent to. Over one night it
+    # labelled a read-only lookup RISKY 218 times running, which parked every task,
+    # and its reviews blamed something else. Risk belongs to the shape of the work,
+    # not to the model's judgement that day.
     risk: str = "SAFE"
 
     def render(self, task: dict) -> str:
         """The instruction the executor receives, generated from the fields.
 
-        Not written by the planner, which matters more than it looks. Two of
-        this project's defects came from prose in a task being read as an
-        instruction by something else: the word "delegate" in a task caused the
-        model to call the tool of that name, and an attempt to work around that
-        by asking for a value spelled as two fragments produced "degate". A
-        rendered instruction has no free text for either failure to live in.
+        The planner does not write it. Prose in a task has twice been read as an
+        instruction: "delegate" made the model call that tool, and the workaround
+        produced "degate". A rendered instruction leaves no free text for either.
         """
         if self.instruction is not None:
             return self.instruction(task)
@@ -142,15 +129,9 @@ class Menu:
     def already_done(self, task: dict, home) -> tuple[bool, str]:
         """Is this task's postcondition ALREADY true, before any work?
 
-        The dual of the postcondition, and it should have been written the same
-        day. Measured over 140 cycles: three completions, all of them tasks
-        asking for a state that already held, one of them a receipt describing
-        its own failure and graded done because the check read the world as it
-        is rather than what this cycle changed.
-
-        Fifty of that run's seventy-two attempts were the repetition guard
-        watching the machine re-establish something true. Work that is already
-        finished is not work; the thread closes and no cycle is spent.
+        Over 140 cycles, all three completions asked for a state that already held,
+        and 50 of 72 attempts were the repetition guard watching it re-establish
+        something true. Finished work is not work: the thread closes, no cycle spent.
         """
         t = self.get(task)
         if t is None or t.postcondition is None:
@@ -203,14 +184,10 @@ class Menu:
     def schema(self) -> dict[str, Any]:
         """A json schema for one task.
 
-        The type is an enum, so an invented type is not expressible. The fields
-        are a flat union of everything any type uses, because a `oneOf` per
-        type compiles into a large grammar and this project has already taken a
-        server down once with a schema that was too clever. Shape comes from
-        the grammar; which fields are REQUIRED for a given type comes from
-        `validate`, deterministically, in code. Both are model-free, and the
-        weaker guarantee is the one that also works on endpoints with no
-        grammar support at all.
+        The type is an enum, so an invented type is not expressible. Fields are a flat
+        union, because a `oneOf` per type compiles to a large grammar, and a schema
+        that was too clever once took a server down. Which fields a type REQUIRES is
+        checked in code by `validate`, which also works without grammar support.
         """
         fields: dict[str, Any] = {}
         for t in self.types.values():
