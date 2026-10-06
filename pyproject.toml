@@ -30,3 +30,11 @@ include = ["reverie_automata*"]
 
 [tool.setuptools.package-data]
 reverie_automata = ["py.typed"]
+
+[tool.ruff.lint]
+select = ["C901"]
+
+[tool.ruff.lint.mccabe]
+# Set just above the worst function today (_redirect_targets, 20). It only
+# moves down: split a function instead of raising the number.
+max-complexity = 22

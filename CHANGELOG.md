@@ -5,6 +5,11 @@ follows Keep a Changelog; versions follow semver.
 
 ## [Unreleased]
 
+### Added
+- CI enforces a complexity ceiling: ruff's C901 rule at `max-complexity = 22`,
+  just above the worst function today (`_redirect_targets`, 20). The number
+  only moves down; a function that crosses it gets split.
+
 ### Fixed
 - Cycle reports now call watch-set diffs `observed_changes`. The old
   `blast_radius` field remains as a compatibility alias. An mtime diff can show
